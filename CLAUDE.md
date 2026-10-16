@@ -168,7 +168,7 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   - File dialogs.
   - The crash backtrace (the exception handler prints the registers and the PC relative to the ELF).
 - **Next:**
-  1. Link with the recompiled code: needs the ROM.
+  1. Done: the recompiled code links. Only NVK and its EGL are missing.
   2. Build mesa-switch NVK (Docker, Rust) and link the NRO; test a clear screen first.
   3. Hardware: memory (`nx_memory.cpp`; is `MapOwner` at an arbitrary address allowed?), the Vulkan surface,
      audio (SDL, 1024 frames), and Joy-Con/Pro input.
@@ -202,9 +202,15 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   plume, zstd, re-spirv, RmlUi, lunasvg, recompui, recompinput, and every host source, the launcher included.
   Nothing is linked yet.
 - The Linux build with every Switch patch applied (`CONKER_HOST_ONLY=ON`, clang) still compiles.
+- With the ROM, `NVK_SDK=<empty archives> switch/build.sh` compiles all of `RecompiledFuncs/` for aarch64 (864 steps).
+  **The link fails only on what mesa-switch provides**: `vk_icdGetInstanceProcAddr` (NVK), and the `egl*`
+  functions that switch-sdl2 calls, which come from mesa-switch's `libEGL.a`. Everything else links: the game, the runtime,
+  RT64 and the launcher.
+  - Pitfall: every directory's `find_package(SDL2)` makes its own imported `SDL2::SDL2-static`. That target has to be
+    filtered once and made `IMPORTED_GLOBAL`, or rt64 still links devkitPro's old `-lEGL -lglapi -ldrm_nouveau`.
+    `SDL2::SDL2` is an alias of it.
 - Not done, and why:
-  - **Linking the NRO**: it needs `RecompiledFuncs/` (from the ROM) and a mesa-switch NVK build (`NVK_SDK`).
-    The CMake for it is written but untested.
+  - **The NRO itself**: it needs a mesa-switch NVK build (`NVK_SDK`: `lib/libvulkan.a`, `libEGL.a`, `libglapi.a`).
   - **`CONKER_RT64=OFF` (headless)**: it is already broken on PC. `widescreen.cpp`, `render_fixes.cpp` and `mouse_camera.cpp`
     use SDL and recompinput without `CONKER_RT64`, so it is not a Switch target.
 - CMake pitfall: it removes a repeated `-include` flag, which leaves the second header as a lone input file.

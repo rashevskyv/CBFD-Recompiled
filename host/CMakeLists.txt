@@ -150,6 +150,15 @@ if (CONKER_RT64)
         # Mesa's NVK, linked in, onto libnx's window (plume's __SWITCH__ code).
         set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
         add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
+        # switch-sdl2 brings devkitPro's old EGL/glapi/drm_nouveau (switch-mesa 20.1), which must not be
+        # linked next to mesa-switch's NVK: take them out of SDL2's target (the NRO links NVK's own EGL
+        # and glapi), and make it the one target every directory's find_package(SDL2) sees.
+        find_package(SDL2 REQUIRED)
+        get_target_property(sdl_link_libraries SDL2::SDL2-static INTERFACE_LINK_LIBRARIES)
+        list(FILTER sdl_link_libraries EXCLUDE REGEX "^(-l)?(EGL|glapi|drm_nouveau)$")
+        set_target_properties(SDL2::SDL2-static PROPERTIES
+            INTERFACE_LINK_LIBRARIES "${sdl_link_libraries}"
+            IMPORTED_GLOBAL TRUE)
         # No file dialogs: RT64 and the launcher link this stand-in.
         add_library(nfd STATIC switch/nfd_stub.c)
         target_include_directories(nfd PUBLIC "${RT64_DIR}/src/contrib/nativefiledialog-extended/src/include")
@@ -296,25 +305,14 @@ if (APPLE)
     target_link_options(ConkerRecomp PRIVATE "-fuse-ld=${CMAKE_CURRENT_SOURCE_DIR}/macos/ld64")
 endif()
 if (CONKER_SWITCH AND NOT CONKER_HOST_ONLY)
-    # The NRO. Not linked yet (needs RecompiledFuncs/ and an NVK build): see CLAUDE.md, Findings.
+    # The NRO. Needs an NVK build (NVK_SDK): see CLAUDE.md, Findings.
     if (CONKER_RT64)
-        # Mesa's NVK for the Switch (danfromtico/mesa-switch), installed with its EGL and glapi:
-        # these replace switch-sdl2's old EGL/glapi/drm_nouveau (switch-mesa 20.1), which must not
-        # be linked next to it.
+        # Mesa's NVK for the Switch (danfromtico/mesa-switch), installed with its EGL and glapi
+        # (switch-sdl2's own are taken out of its target above).
         set(CONKER_NVK_SDK "" CACHE PATH "mesa-switch install prefix, with lib/libvulkan.a")
         if (NOT EXISTS "${CONKER_NVK_SDK}/lib/libvulkan.a")
             message(FATAL_ERROR "The Switch build needs Mesa's NVK: set NVK_SDK (CONKER_NVK_SDK) to mesa-switch's install prefix.")
         endif()
-        foreach(sdl_target SDL2::SDL2 SDL2::SDL2-static)
-            get_target_property(sdl_aliased ${sdl_target} ALIASED_TARGET)
-            if (TARGET ${sdl_target} AND NOT sdl_aliased)
-                get_target_property(sdl_link_libraries ${sdl_target} INTERFACE_LINK_LIBRARIES)
-                if (sdl_link_libraries)
-                    list(FILTER sdl_link_libraries EXCLUDE REGEX "^(-l)?(EGL|glapi|drm_nouveau)$")
-                    set_target_properties(${sdl_target} PROPERTIES INTERFACE_LINK_LIBRARIES "${sdl_link_libraries}")
-                endif()
-            endif()
-        endforeach()
         target_link_libraries(ConkerRecomp PRIVATE
             "${CONKER_NVK_SDK}/lib/libEGL.a" "${CONKER_NVK_SDK}/lib/libglapi.a"
             # The driver's entry point (plume's volkInitializeCustom); not --whole-archive, which
