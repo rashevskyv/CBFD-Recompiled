@@ -310,7 +310,15 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   - **Speed: about 24 fps, sometimes up to 30** (Show FPS). The user wants 60, or a stable 30. The settings were the
     defaults: `msaa_option MSAA2X`, `res_option Auto`, `conker_detail AlwaysHighest`, `rr_option Display`. Whether the
     CPU or the GPU is the limit is not measured yet.
-  - **The pause menu shows wrong graphics.** The user took a screenshot. It is not read yet.
+  - Screenshots (not committed: they show the game). The Nintendo logo, the Rareware logo with Conker, and the N64
+    logo scene draw correctly at 1280x720, with correct colours, textures, lighting and transparency.
+  - **The pause menu shows wrong graphics** (paused during the "Nintendo presents" intro). The pause menu (PAUSED,
+    QUIT, CONT.., the stick, the chocolate) draws correctly. The frozen picture behind it is wrong: "NINTENDO PRESENTS"
+    has black holes along the edges of its letters, and there are many white horizontal streaks across the screen.
+    The overlay says `30 FPS | Game 30`. Probable cause: the game reads its own framebuffer back from RDRAM for the
+    pause background, and RT64's copy of it is wrong on NVK (`hpfb_option` was `Off`). Not yet compared with a PC run.
+  - The console's screenshots are in `sdmc:/emuMMC/SD00/Nintendo/Album/` (emuMMC), not in `sdmc:/Nintendo/Album/`.
+    kefir-hub's web server shows them at `http://<console>/album`.
   - `[frontend] SDL_CreateWindow failed: Could not get EGL display`, then `SDL_GetWindowDisplayIndex failed. Error:
     Invalid window.` (twice). The SDL window is never made, because the EGL stubs fail. RT64 still presents
     through `nwindowGetDefault()`. Anything that asks SDL for the window or its size gets nothing.
