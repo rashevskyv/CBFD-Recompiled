@@ -354,3 +354,20 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - Settings on the General tab (Switch only): **Skip Intro** Off/On (default On; read at boot), **Skip Cutscenes**
   Off/On/All (default All: L skips any cutscene, Start skips the chainsaw opening, All also the "unskippable" ones,
   the mod's `skip_unskippable`).
+
+### 2026-10-16: the bar door hangs the console
+
+- **Symptom** (third run: Original resolution, no MSAA, 60 Hz manual): in the bar scene about 6 fps. When Conker walks
+  to the bar door, the whole console hangs, with crackling audio. Only a hard reboot helps. Not a crash: no
+  exception line.
+- The log ends in garbage bytes after `[cash] set to 0 in scene 0x21`: the lines fflush had given to the file
+  system were never written to the card. So the hang left no evidence.
+- The new vktest quit cleanly (`destroyed`, `exit`).
+- Probable causes: the GPU side (a channel fault, or a submission that never finishes) or memory at the scene change.
+- **For the next run** (built, not yet on hardware):
+  - `host/switch/switch_nx.cpp`: the log thread now does `fsync` after each flush (twice a second), and the crash
+    handler too. Every 2 s it writes `[nx] N s, M MB used`, so the log shows when the hang came and the memory then.
+  - nvdrv transfer memory: **8 MB** (libnx's default, read from the ELF) → **32 MB** (`__nx_nv_transfermem_size`),
+    as DK64Recomp-NX needed on hardware.
+  - `plume-switch.patch`: a fence wait logs `[gpu] still waiting for a fence after N s` every 2 s instead of waiting
+    without a limit, and a failed `vkQueuePresentKHR` logs its error code.

@@ -22,7 +22,7 @@ index 0789c20..a3d909f 100644
  cmake_dependent_option(PLUME_APPLE_RETINA_ENABLED "Enable Apple Retina display support" ON APPLE ON)
  option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index f1dd503..45e5032 100644
+index f1dd503..e1a086d 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
 @@ -15,6 +15,14 @@
@@ -98,7 +98,17 @@ index f1dd503..45e5032 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          VulkanInterface *renderInterface = commandQueue->device->renderInterface;
          SDL_bool sdlRes = SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, &surface);
-@@ -2341,6 +2367,14 @@ namespace plume {
+@@ -2293,6 +2319,9 @@ namespace plume {
+         if (res != VK_SUCCESS) {
+ #else
+         if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
++#endif
++#if defined(__SWITCH__)
++            fprintf(stderr, "vkQueuePresentKHR failed with error code %d.\n", res);
+ #endif
+             return false;
+         }
+@@ -2341,6 +2370,14 @@ namespace plume {
          createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
          createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
          createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -113,7 +123,7 @@ index f1dd503..45e5032 100644
          createInfo.compositeAlpha = pickedAlphaFlag;
          createInfo.presentMode = requiredPresentMode;
          createInfo.clipped = VK_TRUE;
-@@ -2463,6 +2497,12 @@ namespace plume {
+@@ -2463,6 +2500,12 @@ namespace plume {
          GetClientRect(desc.renderWindow, &rect);
          dstWidth = rect.right - rect.left;
          dstHeight = rect.bottom - rect.top;
@@ -126,7 +136,25 @@ index f1dd503..45e5032 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          SDL_GetWindowSizeInPixels(desc.renderWindow, (int *)(&dstWidth), (int *)(&dstHeight));
  #   elif defined(__ANDROID__)
-@@ -4055,6 +4095,8 @@ namespace plume {
+@@ -3635,7 +3678,17 @@ namespace plume {
+         assert(fence != nullptr);
+ 
+         VulkanCommandFence *interfaceFence = static_cast<VulkanCommandFence *>(fence);
++#if defined(__SWITCH__)
++        // A GPU that never finishes hung the whole console: log every 2 s of waiting, so the log shows it.
++        VkResult res;
++        unsigned waited = 0;
++        while ((res = vkWaitForFences(device->vk, 1, &interfaceFence->vk, VK_TRUE, 2000000000ULL)) == VK_TIMEOUT) {
++            waited += 2;
++            fprintf(stderr, "[gpu] still waiting for a fence after %u s\n", waited);
++        }
++#else
+         VkResult res = vkWaitForFences(device->vk, 1, &interfaceFence->vk, VK_TRUE, UINT64_MAX);
++#endif
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "vkWaitForFences failed with error code 0x%X.\n", res);
+             return;
+@@ -4055,6 +4108,8 @@ namespace plume {
              return;
          }
  
@@ -135,7 +163,7 @@ index f1dd503..45e5032 100644
          for (uint32_t i = 0; i < queueFamilyCount; i++) {
              for (uint32_t j = 0; j < queueFamilies[i].queues.size(); j++) {
                  vkGetDeviceQueue(vk, i, j, &queueFamilies[i].queues[j].vk);
-@@ -4429,9 +4471,113 @@ namespace plume {
+@@ -4429,9 +4484,113 @@ namespace plume {
          }
      }
  
@@ -249,7 +277,7 @@ index f1dd503..45e5032 100644
          if (allocator != VK_NULL_HANDLE) {
              vmaDestroyAllocator(allocator);
              allocator = VK_NULL_HANDLE;
-@@ -4464,11 +4610,17 @@ namespace plume {
+@@ -4464,11 +4623,17 @@ namespace plume {
  #else
      VulkanInterface::VulkanInterface() {
  #endif
@@ -267,7 +295,7 @@ index f1dd503..45e5032 100644
  
          appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
          appInfo.pApplicationName = "plume";
-@@ -4500,7 +4652,7 @@ namespace plume {
+@@ -4500,7 +4665,7 @@ namespace plume {
          const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredInstanceExtensionsVulkan();
  #   endif
  

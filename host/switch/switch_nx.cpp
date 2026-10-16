@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #include <switch.h>
 
@@ -19,6 +20,8 @@ extern "C" {
     u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
     // Report crashes even when a debugger is attached.
     u32 __nx_exception_ignoredebug = 1;
+    // nvdrv's transfer memory: libnx gives 8 MB, DK64Recomp-NX needed 32 MB on hardware.
+    u32 __nx_nv_transfermem_size = 0x2000000;
 }
 
 namespace {
@@ -26,12 +29,21 @@ namespace {
     volatile bool log_flush_running = false;
 
     // Writing to the SD card on every line is very slow (a ported game took 33s to boot that way):
-    // the log is buffered, and flushed twice a second.
+    // the log is buffered, and flushed twice a second. fsync commits it to the card: after a hang and a
+    // hard reboot, a log that was only flushed ended in garbage. Every 2 s a line gives the time and the
+    // memory, so a hang shows when it happened.
     void log_flush_loop(void*) {
-        while (log_flush_running) {
+        const u64 start = armGetSystemTick();
+        for (unsigned tick = 1; log_flush_running; tick++) {
             svcSleepThread(500'000'000LL);
+            if (tick % 4 == 0) {
+                u64 used = 0;
+                svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+                std::printf("[nx] %llu s, %llu MB used\n", (unsigned long long)(armTicksToNs(armGetSystemTick() - start) / 1'000'000'000ULL),
+                    (unsigned long long)(used >> 20));
+            }
             std::fflush(stdout);
-            std::fflush(stderr);
+            fsync(fileno(stdout));
         }
     }
 
@@ -110,4 +122,5 @@ extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx) {
     }
     std::fprintf(stdout, "\n  fp 0x%016llX\n", (unsigned long long)ctx->fp.x);
     std::fflush(stdout);
+    fsync(fileno(stdout));
 }
