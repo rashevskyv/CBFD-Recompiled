@@ -324,6 +324,10 @@ namespace {
                 return exe.parent_path();
             }
         }
+#elif defined(__SWITCH__)
+        // The NRO, its assets and the game's data all live in one folder on the SD card.
+        (void)argv0;
+        return conker::switch_data_directory;
 #endif
         return std::filesystem::absolute(argv0).parent_path();
     }
@@ -392,8 +396,12 @@ namespace {
 }
 
 int main(int argc, char** argv) {
+#if !defined(__SWITCH__)
     // Unbuffered, so diagnostics (e.g. RT64's microcode hashes) survive a crash.
+    // (On the Switch, stdout is the log on the SD card, flushed by switch_nx.cpp: unbuffered
+    // writes to the SD card are too slow.)
     std::setvbuf(stdout, nullptr, _IONBF, 0);
+#endif
     install_crash_handler();
     std::filesystem::path rom_path;
     int seconds = 0;
@@ -473,6 +481,18 @@ int main(int argc, char** argv) {
     conker::register_overlays();
     conker::register_mod_exports();
 
+#if defined(__SWITCH__)
+    // No file dialog on the Switch: the ROM is read from a fixed place on the SD card, and
+    // stored with the game's data the first time (as a ROM from the command line).
+    if (rom_path.empty()) {
+        recomp::check_all_stored_roms();
+        std::error_code error;
+        std::filesystem::path fixed_rom = std::filesystem::path(conker::switch_data_directory) / "conker.z64";
+        if (!recomp::is_rom_valid(game_id) && std::filesystem::exists(fixed_rom, error)) {
+            rom_path = fixed_rom;
+        }
+    }
+#endif
     if (!select_rom(rom_path, start_directly)) {
         return EXIT_FAILURE;
     }

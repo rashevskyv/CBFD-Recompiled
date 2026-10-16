@@ -1,0 +1,139 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0789c20..a3d909f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -14,10 +14,17 @@ if(APPLE)
+ endif()
+ 
+ string(COMPARE EQUAL ${CMAKE_SYSTEM_NAME} "Linux" IS_LINUX)
++# Nintendo Switch: an SDL window too, with the surface made on libnx's window (plume_vulkan.cpp).
++string(COMPARE EQUAL ${CMAKE_SYSTEM_NAME} "NintendoSwitch" IS_SWITCH)
++if (IS_LINUX OR IS_SWITCH)
++    set(PLUME_SDL_VULKAN_AVAILABLE TRUE)
++else()
++    set(PLUME_SDL_VULKAN_AVAILABLE FALSE)
++endif()
+ 
+ # Project options
+ include(CMakeDependentOption)
+-cmake_dependent_option(PLUME_SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF IS_LINUX OFF)
++cmake_dependent_option(PLUME_SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF PLUME_SDL_VULKAN_AVAILABLE OFF)
+ cmake_dependent_option(PLUME_D3D12_AGILITY_SDK_ENABLED "Enable D3D12 Agility SDK" OFF WIN32 OFF)
+ cmake_dependent_option(PLUME_APPLE_RETINA_ENABLED "Enable Apple Retina display support" ON APPLE ON)
+ option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f1dd503..97ecc5c 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -15,6 +15,14 @@
+ #include <climits>
+ #include <unordered_map>
+ 
++#if defined(__SWITCH__)
++#   include <switch.h>
++// The statically linked driver's own entry point (Mesa exports it for the loader): volk loads every
++// other function through it. Its vk* functions are reached through volk's pointers only, which the
++// Switch build renames (volk_switch_aliases.h) so they don't clash with the driver's.
++extern "C" VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vk_icdGetInstanceProcAddr(VkInstance instance, const char* pName);
++#endif
++
+ #if DLSS_ENABLED
+ #   include "render/plume_dlss.h"
+ #endif
+@@ -58,6 +66,8 @@ namespace plume {
+ #   endif
+ #   elif defined(__APPLE__)
+         VK_EXT_METAL_SURFACE_EXTENSION_NAME,
++#   elif defined(__SWITCH__)
++        VK_NN_VI_SURFACE_EXTENSION_NAME,
+ #   endif
+     };
+ 
+@@ -2095,6 +2105,18 @@ namespace plume {
+             fprintf(stderr, "vkCreateWin32SurfaceKHR failed with error code 0x%X.\n", res);
+             return;
+         }
++#   elif defined(__SWITCH__)
++        // The SDL window only stands for the screen: the surface is libnx's default window.
++        VkViSurfaceCreateInfoNN surfaceCreateInfo = {};
++        surfaceCreateInfo.sType = VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN;
++        surfaceCreateInfo.window = nwindowGetDefault();
++
++        VulkanInterface *renderInterface = commandQueue->device->renderInterface;
++        res = vkCreateViSurfaceNN(renderInterface->instance, &surfaceCreateInfo, nullptr, &surface);
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "vkCreateViSurfaceNN failed with error code 0x%X.\n", res);
++            return;
++        }
+ #   elif defined(PLUME_SDL_VULKAN_ENABLED)
+         VulkanInterface *renderInterface = commandQueue->device->renderInterface;
+         SDL_bool sdlRes = SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, &surface);
+@@ -2341,6 +2363,14 @@ namespace plume {
+         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+         createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+         createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
++#   if defined(__SWITCH__)
++        // NVK's Switch swapchain doesn't offer every usage (sampling) or the identity transform:
++        // ask only for what the surface supports.
++        createInfo.imageUsage &= surfaceCapabilities.supportedUsageFlags | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
++        if (!(surfaceCapabilities.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)) {
++            createInfo.preTransform = surfaceCapabilities.currentTransform;
++        }
++#   endif
+         createInfo.compositeAlpha = pickedAlphaFlag;
+         createInfo.presentMode = requiredPresentMode;
+         createInfo.clipped = VK_TRUE;
+@@ -2463,6 +2493,12 @@ namespace plume {
+         GetClientRect(desc.renderWindow, &rect);
+         dstWidth = rect.right - rect.left;
+         dstHeight = rect.bottom - rect.top;
++#   elif defined(__SWITCH__)
++        // SDL's size can differ from the surface's (1280x720 while docked at 1920x1080).
++        u32 width = 0, height = 0;
++        nwindowGetDimensions(nwindowGetDefault(), &width, &height);
++        dstWidth = width;
++        dstHeight = height;
+ #   elif defined(PLUME_SDL_VULKAN_ENABLED)
+         SDL_GetWindowSizeInPixels(desc.renderWindow, (int *)(&dstWidth), (int *)(&dstHeight));
+ #   elif defined(__ANDROID__)
+@@ -4464,11 +4500,17 @@ namespace plume {
+ #else
+     VulkanInterface::VulkanInterface() {
+ #endif
++#   if defined(__SWITCH__)
++        // No loader to open: the driver is linked in.
++        volkInitializeCustom(reinterpret_cast<PFN_vkGetInstanceProcAddr>(vk_icdGetInstanceProcAddr));
++        VkResult res = VK_SUCCESS;
++#   else
+         VkResult res = volkInitialize();
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "volkInitialize failed with error code 0x%X.\n", res);
+             return;
+         }
++#   endif
+ 
+         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+         appInfo.pApplicationName = "plume";
+@@ -4500,7 +4542,7 @@ namespace plume {
+         const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredInstanceExtensionsVulkan();
+ #   endif
+ 
+-#   if PLUME_SDL_VULKAN_ENABLED
++#   if PLUME_SDL_VULKAN_ENABLED && !defined(__SWITCH__)
+         // Push the extensions specified by SDL as required.
+         // SDL2 has this awkward requirement for the window to pull the extensions from. 
+         // This can be removed when upgrading to SDL3.
+diff --git a/plume_vulkan.h b/plume_vulkan.h
+index 0a1edbe..f35d112 100644
+--- a/plume_vulkan.h
++++ b/plume_vulkan.h
+@@ -23,6 +23,9 @@
+ #elif defined(__APPLE__)
+ #define VK_USE_PLATFORM_METAL_EXT
+ #include "plume_apple.h"
++#elif defined(__SWITCH__)
++// Nintendo Switch: Mesa's NVK, linked statically, presenting to the default libnx NWindow.
++#define VK_USE_PLATFORM_VI_NN
+ #endif
+ 
+ // For VK_KHR_portability_subset

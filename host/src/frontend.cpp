@@ -203,7 +203,13 @@ namespace {
 
     ultramodern::renderer::WindowHandle create_window(void*) {
         uint32_t flags = SDL_WINDOW_RESIZABLE;
-#if defined(RT64_SDL_WINDOW_VULKAN)
+#if defined(__SWITCH__)
+        // The whole screen. switch-sdl2 has no Vulkan support: RT64 makes its surface on libnx's
+        // window itself (plume), and SDL's window is only the screen's size and the input.
+        flags = SDL_WINDOW_FULLSCREEN;
+        conker::frontend::window_width = 1280;
+        conker::frontend::window_height = 720;
+#elif defined(RT64_SDL_WINDOW_VULKAN)
         flags |= SDL_WINDOW_VULKAN;
 #elif defined(__APPLE__)
         flags |= SDL_WINDOW_METAL;

@@ -1,0 +1,263 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 237a00d..856b6be 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -58,7 +58,8 @@ elseif (APPLE)
+         set (SPIRVCROSS "DYLD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/src/contrib/spirv-cross/lib/arm64:$ENV{DYLD_LIBRARY_PATH}" "${PROJECT_SOURCE_DIR}/src/contrib/spirv-cross/bin/arm64/spirv-cross")
+     endif()
+ else()
+-    if (CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
++    # DXC runs on the machine doing the build, which is not the target when cross-compiling.
++    if (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64")
+         set (DXC "LD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/src/contrib/dxc/lib/x64" "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/x64/dxc-linux")
+     else()
+         set (DXC "LD_LIBRARY_PATH=${PROJECT_SOURCE_DIR}/src/contrib/dxc/lib/arm64" "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/arm64/dxc-linux")
+@@ -69,12 +70,24 @@ set(ZSTD_LEGACY_SUPPORT OFF)
+ set(ZSTD_BUILD_STATIC ON)
+ set(ZSTD_BUILD_SHARED OFF)
+ 
+-add_subdirectory(src/tools/file_to_c)
++if (CMAKE_CROSSCOMPILING)
++    # file_to_c runs during the build: when cross-compiling, use one built for the build machine.
++    if (NOT RT64_HOST_FILE_TO_C)
++        message(FATAL_ERROR "Cross-compiling RT64 needs RT64_HOST_FILE_TO_C: the path to a file_to_c built for this machine (src/tools/file_to_c).")
++    endif()
++    add_executable(file_to_c IMPORTED GLOBAL)
++    set_target_properties(file_to_c PROPERTIES IMPORTED_LOCATION "${RT64_HOST_FILE_TO_C}")
++else()
++    add_subdirectory(src/tools/file_to_c)
++endif()
+ add_subdirectory(src/contrib/re-spirv)
+-add_subdirectory(src/contrib/nativefiledialog-extended)
++# A platform without native file dialogs (the Nintendo Switch) provides its own nfd target.
++if (NOT TARGET nfd)
++    add_subdirectory(src/contrib/nativefiledialog-extended)
++endif()
+ add_subdirectory(src/contrib/zstd/build/cmake)
+ 
+-if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND RT64_SDL_WINDOW_VULKAN)
++if ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR NINTENDO_SWITCH) AND RT64_SDL_WINDOW_VULKAN)
+     set(PLUME_SDL_VULKAN_ENABLED TRUE)
+ elseif (APPLE)
+     set(PLUME_APPLE_RETINA_ENABLED OFF)
+@@ -301,7 +314,7 @@ add_compile_definitions(
+     IMGUI_IMPL_VULKAN_NO_PROTOTYPES
+ )
+ 
+-if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND RT64_SDL_WINDOW_VULKAN)
++if ((CMAKE_SYSTEM_NAME MATCHES "Linux" OR NINTENDO_SWITCH) AND RT64_SDL_WINDOW_VULKAN)
+     add_compile_definitions("PLUME_SDL_VULKAN_ENABLED")
+     add_compile_definitions("RT64_SDL_WINDOW_VULKAN")
+ endif()
+@@ -447,9 +460,11 @@ target_link_libraries(rt64 nfd)
+ target_link_libraries(rt64 libzstd_static)
+ target_link_libraries(rt64 plume)
+ 
+-# Add tools.
+-add_subdirectory(src/tools/texture_hasher)
+-add_subdirectory(src/tools/texture_packer)
++# Add tools (for the machine the game runs on, so not when cross-compiling).
++if (NOT CMAKE_CROSSCOMPILING)
++    add_subdirectory(src/tools/texture_hasher)
++    add_subdirectory(src/tools/texture_packer)
++endif()
+ 
+ # Add any Apple-specific source files and libraries
+ if (APPLE)
+diff --git a/src/common/rt64_mapped_file.cpp b/src/common/rt64_mapped_file.cpp
+index c5e9978..c4534bb 100644
+--- a/src/common/rt64_mapped_file.cpp
++++ b/src/common/rt64_mapped_file.cpp
+@@ -33,6 +33,8 @@ namespace RT64 {
+         if (fileHandle != nullptr) {
+             CloseHandle(fileHandle);
+         }
++#   elif defined(__SWITCH__)
++        // fileData frees itself.
+ #   else
+         if (fileView != MAP_FAILED) {
+             munmap(fileView, fileSize);
+@@ -79,6 +81,26 @@ namespace RT64 {
+             return false;
+         }
+ 
++        return true;
++#   elif defined(__SWITCH__)
++        FILE *file = fopen(path.c_str(), "rb");
++        if (file == nullptr) {
++            fprintf(stderr, "fopen for %s failed with error %s.\n", path.c_str(), strerror(errno));
++            return false;
++        }
++
++        fseek(file, 0, SEEK_END);
++        long size = ftell(file);
++        fseek(file, 0, SEEK_SET);
++        fileData.resize(size > 0 ? size_t(size) : 0);
++        fileRead = (size >= 0) && (fread(fileData.data(), 1, fileData.size(), file) == fileData.size());
++        fclose(file);
++        if (!fileRead) {
++            fprintf(stderr, "fread for %s failed.\n", path.c_str());
++            fileData.clear();
++            return false;
++        }
++
+         return true;
+ #   else
+         fileHandle = ::open(path.c_str(), O_RDONLY);
+@@ -110,18 +132,26 @@ namespace RT64 {
+     bool MappedFile::isOpen() const {
+ #   if defined(_WIN32)
+         return (fileView != nullptr);
++#   elif defined(__SWITCH__)
++        return fileRead;
+ #   else
+         return (fileView != MAP_FAILED);
+ #   endif
+     }
+ 
+     uint8_t *MappedFile::data() const {
++#   if defined(__SWITCH__)
++        return const_cast<uint8_t *>(fileData.data());
++#   else
+         return reinterpret_cast<uint8_t *>(fileView);
++#   endif
+     }
+ 
+     size_t MappedFile::size() const {
+ #   if defined(_WIN32)
+         return fileSize.QuadPart;
++#   elif defined(__SWITCH__)
++        return fileData.size();
+ #   else
+         return static_cast<size_t>(fileSize);
+ #   endif
+diff --git a/src/common/rt64_mapped_file.h b/src/common/rt64_mapped_file.h
+index ff1c45a..51acd32 100644
+--- a/src/common/rt64_mapped_file.h
++++ b/src/common/rt64_mapped_file.h
+@@ -8,6 +8,8 @@
+ 
+ #if defined(_WIN32)
+ #   include <Windows.h>
++#elif defined(__SWITCH__)
++#   include <vector>
+ #else
+ #   include <sys/mman.h>
+ #endif
+@@ -19,6 +21,10 @@ namespace RT64 {
+         HANDLE fileMappingHandle = nullptr;
+         LPVOID fileView = nullptr;
+         LARGE_INTEGER fileSize = {};
++#elif defined(__SWITCH__)
++        // Horizon has no mmap: the file is read into memory.
++        std::vector<uint8_t> fileData;
++        bool fileRead = false;
+ #else
+         int fileHandle = -1;
+         void *fileView = MAP_FAILED;
+diff --git a/src/common/rt64_thread.cpp b/src/common/rt64_thread.cpp
+index c4b080b..9e1a3ba 100644
+--- a/src/common/rt64_thread.cpp
++++ b/src/common/rt64_thread.cpp
+@@ -12,6 +12,9 @@
+ #   include "utf8conv/utf8conv.h"
+ #elif defined(__linux__)
+ #   include <pthread.h>
++#elif defined(__SWITCH__)
++#   include <atomic>
++#   include <switch.h>
+ #endif
+ 
+ namespace RT64 {
+@@ -47,6 +50,9 @@ namespace RT64 {
+         pthread_setname_np(pthread_self(), str.c_str());
+ #   elif defined(__APPLE__)
+         pthread_setname_np(str.c_str());
++#   elif defined(__SWITCH__)
++        // Horizon threads have no settable name.
++        (void)str;
+ #   else
+         static_assert(false, "Unimplemented");
+ #   endif
+@@ -61,6 +67,35 @@ namespace RT64 {
+         // from -20 to 19 (lower being higher priority). However, by strict POSIX spec "nice" is meant to be per-process instead of
+         // per-thread. Therefore to avoid issues in case Linux is modified to match the spec in the future, this function does nothing.
+         (void)priority;
++#   elif defined(__SWITCH__)
++        // Horizon: a lower number runs first; applications get 0x1C-0x3B, the main thread 0x2C.
++        s32 nxPriority = 0x2C;
++        switch (priority) {
++        case Thread::Priority::Idle:
++            nxPriority = 0x3B;
++            break;
++        case Thread::Priority::Lowest:
++            nxPriority = 0x30;
++            break;
++        case Thread::Priority::Low:
++            nxPriority = 0x2E;
++            break;
++        case Thread::Priority::Normal:
++            nxPriority = 0x2C;
++            break;
++        case Thread::Priority::High:
++            nxPriority = 0x2B;
++            break;
++        case Thread::Priority::Highest:
++            nxPriority = 0x2A;
++            break;
++        default:
++            break;
++        }
++        svcSetThreadPriority(CUR_THREAD_HANDLE, nxPriority);
++        // New threads all start on core 0: deal them out over cores 0-2 (core 3 is the system's).
++        static std::atomic<int> nextCore{ 1 };
++        svcSetThreadCoreMask(CUR_THREAD_HANDLE, nextCore++ % 3, 0x7);
+ #   else
+         static_assert(false, "Unimplemented");
+ #   endif
+diff --git a/src/common/rt64_user_paths.cpp b/src/common/rt64_user_paths.cpp
+index f38d8eb..7fcd4b9 100644
+--- a/src/common/rt64_user_paths.cpp
++++ b/src/common/rt64_user_paths.cpp
+@@ -54,6 +54,8 @@ namespace RT64 {
+                 resultPath = homePath / appDirName;
+             }
+         }
++#   elif defined(__SWITCH__)
++        resultPath = std::filesystem::path("sdmc:/switch") / appId;
+ #   endif
+ 
+         return resultPath;
+diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
+index 08f83e5..ae2ee35 100755
+--- a/src/hle/rt64_application_window.cpp
++++ b/src/hle/rt64_application_window.cpp
+@@ -105,7 +105,7 @@ namespace RT64 {
+         bounds.height = rect.bottom - rect.top;
+ #   elif defined(__ANDROID__)
+         static_assert(false && "Android unimplemented");
+-#   elif defined(__linux__) || defined(__APPLE__)
++#   elif defined(__linux__) || defined(__APPLE__) || defined(__SWITCH__)
+         if (SDL_VideoInit(nullptr) != 0) {
+             printf("Failed to init SDL2 video: %s\n", SDL_GetError());
+             assert(false && "Failed to init SDL2 video");
+@@ -133,7 +133,8 @@ namespace RT64 {
+         uint32_t flags = SDL_WINDOW_RESIZABLE;
+         # if defined(__APPLE__)
+         flags |= SDL_WINDOW_METAL;
+-        # elif defined(RT64_SDL_WINDOW_VULKAN)
++        # elif defined(RT64_SDL_WINDOW_VULKAN) && !defined(__SWITCH__)
++        // (switch-sdl2 has no Vulkan support: plume makes the surface on libnx's window itself.)
+         flags |= SDL_WINDOW_VULKAN;
+         #endif
+         sdlWindow = SDL_CreateWindow(windowTitle, bounds.left, bounds.top, bounds.width, bounds.height, flags);
+@@ -166,6 +167,9 @@ namespace RT64 {
+         uint64_t tid;
+         pthread_threadid_np(nullptr, &tid);
+         setup(windowHandle, listener, tid);
++#   elif defined(__SWITCH__)
++        // libnx's pthread_t is a pointer; the thread ID is only compared on Windows.
++        setup(windowHandle, listener, 0);
+ #   else
+         setup(windowHandle, listener, pthread_self());
+ #   endif

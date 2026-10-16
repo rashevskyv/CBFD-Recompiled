@@ -5,6 +5,8 @@
 
 #ifdef _WIN32
 #   include <Windows.h>
+#elif defined(__SWITCH__)
+#   include "librecomp/nx_memory.hpp"
 #else
 #   include <sys/mman.h>
 #endif
@@ -67,6 +69,8 @@ static bool map_segment(uint8_t* rdram, uint32_t vram, const uint32_t* words, si
 #ifdef _WIN32
     DWORD old;
     bool ok = VirtualProtect(begin, end - begin, PAGE_READWRITE, &old) != 0;
+#elif defined(__SWITCH__)
+    bool ok = recomp::nx::commit(begin, end - begin);
 #else
     bool ok = mprotect(begin, end - begin, PROT_READ | PROT_WRITE) == 0;
 #endif

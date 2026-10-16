@@ -11,6 +11,10 @@
 /conker_data/
 /host/build-win/
 /host/build-linux/
+# Switch builds (switch/build.sh)
+/host/build-switch/
+/host/build-switch-host-only/
+/host/build-switch-tools/
 /host/build-win-log.txt
 __pycache__/
 /tools/BanjoRecomp/

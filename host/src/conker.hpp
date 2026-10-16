@@ -20,6 +20,11 @@ namespace recomp::config {
 struct _SDL_GameController;
 
 namespace conker {
+#if defined(__SWITCH__)
+    // switch/switch_nx.cpp: the folder on the SD card with the NRO's assets, the ROM, saves and the log.
+    inline constexpr const char* switch_data_directory = "sdmc:/switch/cbfd";
+#endif
+
     // overlays.cpp
     void register_overlays();
     void register_tlb_mapped_code();

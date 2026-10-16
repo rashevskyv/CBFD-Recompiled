@@ -1,0 +1,421 @@
+diff --git a/librecomp/CMakeLists.txt b/librecomp/CMakeLists.txt
+index 2b15ac1..9eecc46 100644
+--- a/librecomp/CMakeLists.txt
++++ b/librecomp/CMakeLists.txt
+@@ -19,6 +19,7 @@ add_library(librecomp STATIC
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/flash.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/heap.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/math_routines.cpp"
++    "${CMAKE_CURRENT_SOURCE_DIR}/src/nx_memory.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/mods.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/mod_events.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/mod_hooks.cpp"
+diff --git a/librecomp/include/librecomp/addresses.hpp b/librecomp/include/librecomp/addresses.hpp
+index b1b50cb..2bde4be 100644
+--- a/librecomp/include/librecomp/addresses.hpp
++++ b/librecomp/include/librecomp/addresses.hpp
+@@ -6,8 +6,14 @@
+ #include "recomp.h"
+ 
+ namespace recomp {
++#ifdef __SWITCH__
++    // 64MB on the Switch, where all of it is committed memory: RDRAM, and the heap above
++    // mod_rdram_start for mods and patches.
++    constexpr size_t mem_size = 64ULL * 1024ULL * 1024ULL;
++#else
+     // 512GB (kseg0 size)
+     constexpr size_t mem_size = 512ULL * 1024ULL * 1024ULL;
++#endif
+     // 4GB (the full address space)
+     constexpr size_t allocation_size = 4096ULL * 1024ULL * 1024ULL;
+     // We need a place in rdram to hold the PI handles, so pick an address in extended rdram
+diff --git a/librecomp/include/librecomp/nx_memory.hpp b/librecomp/include/librecomp/nx_memory.hpp
+new file mode 100644
+index 0000000..62efe65
+--- /dev/null
++++ b/librecomp/include/librecomp/nx_memory.hpp
+@@ -0,0 +1,24 @@
++#ifndef __RECOMP_NX_MEMORY_HPP__
++#define __RECOMP_NX_MEMORY_HPP__
++
++// Nintendo Switch (Horizon) game memory. Horizon has no mmap or mprotect: the 4GB range the recompiled
++// code addresses is reserved in the address space (libnx virtmem), and the parts that are used (RDRAM,
++// and the game's TLB-mapped pages) are backed by heap memory mapped there as code memory, which may be
++// mapped at any address the reservation holds.
++
++#include <cstddef>
++#include <cstdint>
++
++namespace recomp {
++    namespace nx {
++        // Reserves `size` bytes of address space, with nothing mapped. Returns its start, or nullptr.
++        uint8_t* reserve(size_t size);
++        // Maps zeroed read/write memory at [address, address + size), inside the reservation.
++        // Both must be multiples of 0x1000.
++        bool commit(void* address, size_t size);
++        // Unmaps everything and frees the reservation.
++        void release();
++    }
++}
++
++#endif
+diff --git a/librecomp/src/files.cpp b/librecomp/src/files.cpp
+index af6f18d..f8319aa 100644
+--- a/librecomp/src/files.cpp
++++ b/librecomp/src/files.cpp
+@@ -36,6 +36,19 @@ bool recomp::finalize_output_file_with_backup(const std::filesystem::path& filep
+     temp_path += temp_suffix;
+ 
+     std::error_code ec;
++#if defined(__SWITCH__)
++    // copy_file fails on the Switch's SD card (it sets the copy's permissions, which the SD card
++    // refuses, as DK64Recomp-NX found): rotate the files with renames instead.
++    if (std::filesystem::exists(filepath, ec)) {
++        std::filesystem::remove(backup_path, ec);
++        std::filesystem::rename(filepath, backup_path, ec);
++        if (ec) {
++            return false;
++        }
++    }
++    std::filesystem::rename(temp_path, filepath, ec);
++    return !ec;
++#endif
+     if (std::filesystem::exists(filepath, ec)) {
+         std::filesystem::copy_file(filepath, backup_path, std::filesystem::copy_options::overwrite_existing, ec);
+         if (ec) {
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+index 42c9057..00ecf7e 100644
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -167,6 +167,48 @@ void protect(void* target_func, uint64_t old_flags) {
+         &dummy_old_flags);
+     (void)result;
+ }
++#elif defined(__SWITCH__)
++// Horizon has no dynamic libraries, and the program's code can't be made writable: native mod libraries
++// aren't loaded and recompiled functions aren't patched (see patch_func).
++class recomp::mods::DynamicLibrary {
++public:
++    static constexpr std::string_view PlatformExtension = ".so";
++    DynamicLibrary() = default;
++    DynamicLibrary(const std::filesystem::path& path) {
++        (void)path;
++    }
++    DynamicLibrary(const DynamicLibrary&) = delete;
++    DynamicLibrary& operator=(const DynamicLibrary&) = delete;
++    DynamicLibrary(DynamicLibrary&&) = delete;
++    DynamicLibrary& operator=(DynamicLibrary&&) = delete;
++
++    void unload() {}
++
++    bool good() const {
++        return false;
++    }
++
++    template <typename T>
++    bool get_dll_symbol(T& out, const char* name) const {
++        (void)name;
++        out = nullptr;
++        return false;
++    };
++
++    uint32_t get_api_version() {
++        return (uint32_t)-1;
++    }
++};
++
++void unprotect(void* target_func, uint64_t* old_flags) {
++    (void)target_func;
++    *old_flags = 0;
++}
++
++void protect(void* target_func, uint64_t old_flags) {
++    (void)target_func;
++    (void)old_flags;
++}
+ #else
+ #  include <unistd.h>
+ #  include <dlfcn.h>
+@@ -564,6 +606,12 @@ recomp::mods::GenericFunction recomp::mods::LiveRecompilerCodeHandle::get_functi
+ }
+ 
+ void patch_func(recomp_func_t* target_func, recomp::mods::GenericFunction replacement_func) {
++#if defined(__SWITCH__)
++    // TODO: patch through a writable alias of the code (svcMapProcessMemory), then flush the caches.
++    fprintf(stderr, "[mods] can't patch %p on the Switch: function replacements are off\n", (void*)target_func);
++    (void)replacement_func;
++    return;
++#endif
+     uint8_t* target_func_u8 = reinterpret_cast<uint8_t*>(target_func);
+     size_t offset = 0;
+ 
+@@ -601,6 +649,11 @@ void patch_func(recomp_func_t* target_func, recomp::mods::GenericFunction replac
+ }
+ 
+ void unpatch_func(void* target_func, const recomp::mods::PatchData& data) {
++#if defined(__SWITCH__)
++    (void)target_func;
++    (void)data;
++    return;
++#endif
+     uint64_t old_flags;
+     unprotect(target_func, &old_flags);
+     memcpy(target_func, data.replaced_bytes.data(), data.replaced_bytes.size());
+diff --git a/librecomp/src/nx_memory.cpp b/librecomp/src/nx_memory.cpp
+new file mode 100644
+index 0000000..052e5cd
+--- /dev/null
++++ b/librecomp/src/nx_memory.cpp
+@@ -0,0 +1,83 @@
++#ifdef __SWITCH__
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <mutex>
++#include <vector>
++
++#include <switch.h>
++
++#include "librecomp/nx_memory.hpp"
++
++namespace {
++    struct Mapping {
++        void* address;
++        void* backing;
++        Handle handle;
++        size_t size;
++    };
++
++    std::mutex mutex;
++    VirtmemReservation* reservation = nullptr;
++    std::vector<Mapping> mappings;
++}
++
++uint8_t* recomp::nx::reserve(size_t size) {
++    std::lock_guard lock{ mutex };
++    virtmemLock();
++    void* address = virtmemFindAslr(size, 0x10000);
++    if (address != nullptr) {
++        reservation = virtmemAddReservation(address, size);
++    }
++    virtmemUnlock();
++    if (reservation == nullptr) {
++        std::fprintf(stderr, "[nx_memory] could not reserve 0x%zX bytes\n", size);
++        return nullptr;
++    }
++    return static_cast<uint8_t*>(address);
++}
++
++bool recomp::nx::commit(void* address, size_t size) {
++    std::lock_guard lock{ mutex };
++    // The backing memory comes from the heap; once it's code memory, only its mapping is used.
++    void* backing = std::aligned_alloc(0x1000, size);
++    if (backing == nullptr) {
++        std::fprintf(stderr, "[nx_memory] out of memory for 0x%zX bytes\n", size);
++        return false;
++    }
++    std::memset(backing, 0, size);
++    Handle handle;
++    Result rc = svcCreateCodeMemory(&handle, backing, size);
++    if (R_SUCCEEDED(rc)) {
++        rc = svcControlCodeMemory(handle, CodeMapOperation_MapOwner, address, size, Perm_Rw);
++        if (R_FAILED(rc)) {
++            svcCloseHandle(handle);
++        }
++    }
++    if (R_FAILED(rc)) {
++        std::fprintf(stderr, "[nx_memory] could not map 0x%zX bytes at %p: 0x%X\n", size, address, rc);
++        std::free(backing);
++        return false;
++    }
++    mappings.push_back({ address, backing, handle, size });
++    return true;
++}
++
++void recomp::nx::release() {
++    std::lock_guard lock{ mutex };
++    for (const Mapping& mapping : mappings) {
++        svcControlCodeMemory(mapping.handle, CodeMapOperation_UnmapOwner, mapping.address, mapping.size, Perm_None);
++        svcCloseHandle(mapping.handle);
++        std::free(mapping.backing);
++    }
++    mappings.clear();
++    if (reservation != nullptr) {
++        virtmemLock();
++        virtmemRemoveReservation(reservation);
++        virtmemUnlock();
++        reservation = nullptr;
++    }
++}
++
++#endif
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+index e061d59..d8fcc80 100644
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -29,6 +29,8 @@
+ #ifdef _WIN32
+ #    define WIN32_LEAN_AND_MEAN
+ #    include <Windows.h>
++#elif defined(__SWITCH__)
++#    include "librecomp/nx_memory.hpp"
+ #else
+ #    include <sys/mman.h>
+ #endif
+@@ -968,6 +970,12 @@ void recomp::start(const recomp::Configuration& cfg) {
+             VirtualFree(rdram, 0, MEM_RELEASE);
+         }
+     }
++#elif defined(__SWITCH__)
++    rdram = recomp::nx::reserve(allocation_size);
++    alloc_failed = (rdram == nullptr) || !recomp::nx::commit(rdram, mem_size);
++    if (alloc_failed && rdram != nullptr) {
++        recomp::nx::release();
++    }
+ #else
+     rdram = (uint8_t*)mmap(NULL, allocation_size, PROT_NONE, MAP_ANON | MAP_PRIVATE, -1, 0);
+     alloc_failed = rdram == reinterpret_cast<uint8_t*>(MAP_FAILED);
+@@ -1023,6 +1031,9 @@ void recomp::start(const recomp::Configuration& cfg) {
+ #ifdef _WIN32
+     // VirtualFree returns zero on failure.
+     free_failed = (VirtualFree(rdram, 0, MEM_RELEASE) == 0);
++#elif defined(__SWITCH__)
++    recomp::nx::release();
++    free_failed = false;
+ #else
+     // munmap returns -1 on failure.
+     free_failed = (munmap(rdram, allocation_size) == -1);
+diff --git a/thirdparty/concurrentqueue/lightweightsemaphore.h b/thirdparty/concurrentqueue/lightweightsemaphore.h
+index 41ba094..30af8fd 100644
+--- a/thirdparty/concurrentqueue/lightweightsemaphore.h
++++ b/thirdparty/concurrentqueue/lightweightsemaphore.h
+@@ -24,7 +24,7 @@ extern "C" {
+ }
+ #elif defined(__MACH__)
+ #include <mach/mach.h>
+-#elif defined(__unix__)
++#elif defined(__unix__) || defined(__SWITCH__)
+ #include <semaphore.h>
+ 
+ #if defined(__GLIBC_PREREQ) && defined(_GNU_SOURCE)
+@@ -165,7 +165,7 @@ public:
+ 		}
+ 	}
+ };
+-#elif defined(__unix__)
++#elif defined(__unix__) || defined(__SWITCH__)
+ //---------------------------------------------------------
+ // Semaphore (POSIX, Linux)
+ //---------------------------------------------------------
+diff --git a/ultramodern/include/ultramodern/renderer_context.hpp b/ultramodern/include/ultramodern/renderer_context.hpp
+index d60c4ec..2ae644f 100644
+--- a/ultramodern/include/ultramodern/renderer_context.hpp
++++ b/ultramodern/include/ultramodern/renderer_context.hpp
+@@ -54,7 +54,7 @@ namespace ultramodern {
+             auto operator<=>(const WindowHandle&) const = default;
+         };
+ // TODO add a native window handle option here (Display/Window for x11 and ANativeWindow for Android) as a compile-time option.
+-#elif defined(__linux__) || defined(__ANDROID__)
++#elif defined(__linux__) || defined(__ANDROID__) || defined(__SWITCH__)
+         using WindowHandle = SDL_Window*;
+ #elif defined(__APPLE__)
+         struct WindowHandle {
+diff --git a/ultramodern/src/error_handling.cpp b/ultramodern/src/error_handling.cpp
+index 8ca779e..f415d72 100644
+--- a/ultramodern/src/error_handling.cpp
++++ b/ultramodern/src/error_handling.cpp
+@@ -21,7 +21,7 @@ void ultramodern::error_handling::message_box(const char* msg) {
+ void ultramodern::error_handling::quick_exit(const char* filename, int line, const char *func, int exit_status) {
+     fprintf(stderr, "Exiting with exit status '%i'. Function %s, at file %s:%i\n", exit_status, func, filename, line);
+ 
+-#ifdef __APPLE__
++#if defined(__APPLE__) || defined(__SWITCH__)
+     std::_Exit(exit_status);
+ #else
+     std::quick_exit(exit_status);
+diff --git a/ultramodern/src/save_states.cpp b/ultramodern/src/save_states.cpp
+index de5a368..fea2ce7 100644
+--- a/ultramodern/src/save_states.cpp
++++ b/ultramodern/src/save_states.cpp
+@@ -18,6 +18,11 @@
+ #   include <mach-o/dyld.h>
+ #   include <mach-o/loader.h>
+ #   include <cstring>
++#elif defined(__SWITCH__)
++#   include <unwind.h>
++// The program's bounds, from libnx's linker script.
++extern "C" char __start__[];
++extern "C" char __end__[];
+ #else
+ #   include <execinfo.h>
+ #   include <link.h>
+@@ -65,6 +70,11 @@ namespace {
+         }
+         return range;
+     }
++#elif defined(__SWITCH__)
++    ImageRange find_image_range() {
++        // An NRO is one image, with nothing loaded beside it.
++        return ImageRange{ reinterpret_cast<uintptr_t>(__start__), reinterpret_cast<uintptr_t>(__end__) };
++    }
+ #else
+     ImageRange find_image_range() {
+         // The first object dl_iterate_phdr reports is the program. Its range is its loaded segments'.
+@@ -127,6 +137,19 @@ namespace {
+             }
+             skip += count;
+         }
++#elif defined(__SWITCH__)
++        // newlib has no backtrace(): walk the stack with the unwinder (libgcc), skipping this frame.
++        struct Walk {
++            Hash* hash;
++            int index;
++        } walk{ &hash, 0 };
++        _Unwind_Backtrace([](_Unwind_Context* context, void* data) -> _Unwind_Reason_Code {
++            auto* walk = static_cast<Walk*>(data);
++            if (walk->index++ > 0) {
++                walk->hash->add(static_cast<uintptr_t>(_Unwind_GetIP(context)));
++            }
++            return walk->index < 1024 ? _URC_NO_REASON : _URC_END_OF_STACK;
++        }, &walk);
+ #else
+         void* frames[1024];
+         const int count = backtrace(frames, 1024);
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index 221ad3d..d7f642d 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -149,6 +149,32 @@ void ultramodern::set_native_thread_name(const std::string& name) {
+ }
+ 
+ void ultramodern::set_native_thread_priority(ThreadPriority pri) {}
++#elif defined(__SWITCH__)
++#include <atomic>
++#include <switch.h>
++
++void ultramodern::set_native_thread_name(const std::string& name) {
++    // Horizon threads have no settable name.
++    (void)name;
++}
++
++void ultramodern::set_native_thread_priority(ThreadPriority pri) {
++    // Horizon: a lower number runs first; applications get 0x1C-0x3B, the main thread 0x2C.
++    s32 priority = 0x2C;
++    switch (pri) {
++        case ThreadPriority::Low:      priority = 0x2E; break;
++        case ThreadPriority::Normal:   priority = 0x2C; break;
++        case ThreadPriority::High:     priority = 0x2B; break;
++        case ThreadPriority::VeryHigh: priority = 0x2A; break;
++        case ThreadPriority::Critical: priority = 0x29; break;
++        default: break;
++    }
++    svcSetThreadPriority(CUR_THREAD_HANDLE, priority);
++    // New threads all start on core 0: deal them out over cores 0-2 (core 3 is the system's,
++    // and does not time-slice).
++    static std::atomic<int> next_core{ 0 };
++    svcSetThreadCoreMask(CUR_THREAD_HANDLE, next_core++ % 3, 0x7);
++}
+ #endif
+ 
+ static PTR(PTR(OSThread)) running_thread_variable = NULLPTR;

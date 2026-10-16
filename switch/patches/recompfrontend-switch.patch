@@ -1,0 +1,69 @@
+diff --git a/recompinput/CMakeLists.txt b/recompinput/CMakeLists.txt
+index 899372b..734ae02 100644
+--- a/recompinput/CMakeLists.txt
++++ b/recompinput/CMakeLists.txt
+@@ -42,7 +42,7 @@ target_include_directories(recompinput PRIVATE
+ 
+ if (WIN32)
+     target_include_directories(recompinput PRIVATE ${sdl2_SOURCE_DIR}/include)
+-elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
++elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux" OR NINTENDO_SWITCH)
+     target_include_directories(recompinput PRIVATE ${SDL2_INCLUDE_DIRS})
+ endif()
+ 
+diff --git a/recompui/CMakeLists.txt b/recompui/CMakeLists.txt
+index 4dce8e0..84f9f9f 100644
+--- a/recompui/CMakeLists.txt
++++ b/recompui/CMakeLists.txt
+@@ -106,7 +106,7 @@ target_include_directories(recompui PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include
+ 
+ if (WIN32)
+     target_include_directories(recompui PRIVATE ${sdl2_SOURCE_DIR}/include)
+-elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux")
++elseif (APPLE OR CMAKE_SYSTEM_NAME MATCHES "Linux" OR NINTENDO_SWITCH)
+     target_include_directories(recompui PRIVATE ${SDL2_INCLUDE_DIRS})
+ endif()
+ 
+diff --git a/recompui/src/composites/ui_mod_installer.cpp b/recompui/src/composites/ui_mod_installer.cpp
+index c91df6f..70dd8b8 100644
+--- a/recompui/src/composites/ui_mod_installer.cpp
++++ b/recompui/src/composites/ui_mod_installer.cpp
+@@ -18,6 +18,10 @@ namespace recompui {
+         return file_path.extension() == ".so" || file_path.filename().string().find(".so.") != std::string::npos;
+ #elif defined(__APPLE__)
+         return file_path.extension() == ".dylib";
++#elif defined(__SWITCH__)
++        // No dynamic libraries on the Switch.
++        (void)file_path;
++        return false;
+ #else
+         static_assert(false, "Unimplemented for this platform.");
+ #endif
+diff --git a/recompui/src/composites/ui_mod_menu.cpp b/recompui/src/composites/ui_mod_menu.cpp
+index 35a9952..5c7c173 100644
+--- a/recompui/src/composites/ui_mod_menu.cpp
++++ b/recompui/src/composites/ui_mod_menu.cpp
+@@ -308,6 +308,9 @@ void ModMenu::open_mods_folder() {
+ #elif defined(__APPLE__)
+     std::string command = "open \"" + mods_directory.string() + "\"";
+     std::system(command.c_str());
++#elif defined(__SWITCH__)
++    // No file manager to open it in: mods are copied there on the SD card.
++    printf("Mods folder: %s\n", mods_directory.string().c_str());
+ #else
+     static_assert(false, "Not implemented for this platform.");
+ #endif
+diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp
+index 7ee84ed..87646b5 100644
+--- a/recompui/src/util/file.cpp
++++ b/recompui/src/util/file.cpp
+@@ -109,6 +109,9 @@ namespace recompui {
+         if (homedir != nullptr) {
+             recomp_dir = std::filesystem::path{homedir} / (std::u8string{u8".config/"} + programconfig::get_program_id());
+         }
++#elif defined(__SWITCH__)
++        // Always portable: the game's folder on the SD card, which the program starts in.
++        recomp_dir = std::filesystem::current_path();
+ #endif
+ 
+         return recomp_dir;
