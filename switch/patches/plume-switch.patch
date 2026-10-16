@@ -22,10 +22,19 @@ index 0789c20..a3d909f 100644
  cmake_dependent_option(PLUME_APPLE_RETINA_ENABLED "Enable Apple Retina display support" ON APPLE ON)
  option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index f1dd503..e1a086d 100644
+index f1dd503..539fed4 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
-@@ -15,6 +15,14 @@
+@@ -8,6 +8,8 @@
+ #define VMA_IMPLEMENTATION
+ #define VOLK_IMPLEMENTATION 
+ 
++#include <atomic>
++#include <chrono>
+ #include "plume_vulkan.h"
+ 
+ #include <algorithm>
+@@ -15,6 +17,14 @@
  #include <climits>
  #include <unordered_map>
  
@@ -40,7 +49,20 @@ index f1dd503..e1a086d 100644
  #if DLSS_ENABLED
  #   include "render/plume_dlss.h"
  #endif
-@@ -58,6 +66,8 @@ namespace plume {
+@@ -28,6 +38,12 @@
+ // - Fix resource pools.
+ 
+ namespace plume {
++#if defined(__SWITCH__)
++    // Pipelines made, and the time spent making them, for RT64's frame statistics in the log.
++    std::atomic<uint32_t> switchPipelineCount{ 0 };
++    std::atomic<uint64_t> switchPipelineMicroseconds{ 0 };
++#endif
++
+     // Backend constants.
+ 
+     // Required buffer alignment for acceleration structures.
+@@ -58,6 +74,8 @@ namespace plume {
  #   endif
  #   elif defined(__APPLE__)
          VK_EXT_METAL_SURFACE_EXTENSION_NAME,
@@ -49,12 +71,20 @@ index f1dd503..e1a086d 100644
  #   endif
      };
  
-@@ -1390,11 +1400,13 @@ namespace plume {
+@@ -1390,11 +1408,21 @@ namespace plume {
          pipelineInfo.layout = pipelineLayout->vk;
          pipelineInfo.stage = stageInfo;
  
 -        VkResult res = vkCreateComputePipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++#if defined(__SWITCH__)
++        const auto switchPipelineStart = std::chrono::steady_clock::now();
++#endif
 +        VkResult res = vkCreateComputePipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
++#if defined(__SWITCH__)
++        switchPipelineCount.fetch_add(1, std::memory_order_relaxed);
++        switchPipelineMicroseconds.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(
++            std::chrono::steady_clock::now() - switchPipelineStart).count(), std::memory_order_relaxed);
++#endif
          if (res != VK_SUCCESS) {
              fprintf(stderr, "vkCreateComputePipelines failed with error code 0x%X.\n", res);
              return;
@@ -64,12 +94,20 @@ index f1dd503..e1a086d 100644
      }
  
      VulkanComputePipeline::~VulkanComputePipeline() {
-@@ -1649,11 +1661,13 @@ namespace plume {
+@@ -1649,11 +1677,21 @@ namespace plume {
          pipelineInfo.layout = pipelineLayout->vk;
          pipelineInfo.renderPass = renderPass;
  
 -        VkResult res = vkCreateGraphicsPipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++#if defined(__SWITCH__)
++        const auto switchPipelineStart = std::chrono::steady_clock::now();
++#endif
 +        VkResult res = vkCreateGraphicsPipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
++#if defined(__SWITCH__)
++        switchPipelineCount.fetch_add(1, std::memory_order_relaxed);
++        switchPipelineMicroseconds.fetch_add(std::chrono::duration_cast<std::chrono::microseconds>(
++            std::chrono::steady_clock::now() - switchPipelineStart).count(), std::memory_order_relaxed);
++#endif
          if (res != VK_SUCCESS) {
              fprintf(stderr, "vkCreateGraphicsPipelines failed with error code 0x%X.\n", res);
              return;
@@ -79,7 +117,7 @@ index f1dd503..e1a086d 100644
      }
  
      VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
-@@ -2095,6 +2109,18 @@ namespace plume {
+@@ -2095,6 +2133,18 @@ namespace plume {
              fprintf(stderr, "vkCreateWin32SurfaceKHR failed with error code 0x%X.\n", res);
              return;
          }
@@ -98,7 +136,7 @@ index f1dd503..e1a086d 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          VulkanInterface *renderInterface = commandQueue->device->renderInterface;
          SDL_bool sdlRes = SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, &surface);
-@@ -2293,6 +2319,9 @@ namespace plume {
+@@ -2293,6 +2343,9 @@ namespace plume {
          if (res != VK_SUCCESS) {
  #else
          if ((res != VK_SUCCESS) && (res != VK_SUBOPTIMAL_KHR)) {
@@ -108,7 +146,7 @@ index f1dd503..e1a086d 100644
  #endif
              return false;
          }
-@@ -2341,6 +2370,14 @@ namespace plume {
+@@ -2341,6 +2394,14 @@ namespace plume {
          createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
          createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
          createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -123,7 +161,7 @@ index f1dd503..e1a086d 100644
          createInfo.compositeAlpha = pickedAlphaFlag;
          createInfo.presentMode = requiredPresentMode;
          createInfo.clipped = VK_TRUE;
-@@ -2463,6 +2500,12 @@ namespace plume {
+@@ -2463,6 +2524,12 @@ namespace plume {
          GetClientRect(desc.renderWindow, &rect);
          dstWidth = rect.right - rect.left;
          dstHeight = rect.bottom - rect.top;
@@ -136,7 +174,7 @@ index f1dd503..e1a086d 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          SDL_GetWindowSizeInPixels(desc.renderWindow, (int *)(&dstWidth), (int *)(&dstHeight));
  #   elif defined(__ANDROID__)
-@@ -3635,7 +3678,17 @@ namespace plume {
+@@ -3635,7 +3702,17 @@ namespace plume {
          assert(fence != nullptr);
  
          VulkanCommandFence *interfaceFence = static_cast<VulkanCommandFence *>(fence);
@@ -154,7 +192,7 @@ index f1dd503..e1a086d 100644
          if (res != VK_SUCCESS) {
              fprintf(stderr, "vkWaitForFences failed with error code 0x%X.\n", res);
              return;
-@@ -4055,6 +4108,8 @@ namespace plume {
+@@ -4055,6 +4132,8 @@ namespace plume {
              return;
          }
  
@@ -163,7 +201,7 @@ index f1dd503..e1a086d 100644
          for (uint32_t i = 0; i < queueFamilyCount; i++) {
              for (uint32_t j = 0; j < queueFamilies[i].queues.size(); j++) {
                  vkGetDeviceQueue(vk, i, j, &queueFamilies[i].queues[j].vk);
-@@ -4429,9 +4484,113 @@ namespace plume {
+@@ -4429,9 +4508,113 @@ namespace plume {
          }
      }
  
@@ -277,7 +315,7 @@ index f1dd503..e1a086d 100644
          if (allocator != VK_NULL_HANDLE) {
              vmaDestroyAllocator(allocator);
              allocator = VK_NULL_HANDLE;
-@@ -4464,11 +4623,17 @@ namespace plume {
+@@ -4464,11 +4647,17 @@ namespace plume {
  #else
      VulkanInterface::VulkanInterface() {
  #endif
@@ -295,7 +333,7 @@ index f1dd503..e1a086d 100644
  
          appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
          appInfo.pApplicationName = "plume";
-@@ -4500,7 +4665,7 @@ namespace plume {
+@@ -4500,7 +4689,7 @@ namespace plume {
          const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredInstanceExtensionsVulkan();
  #   endif
  

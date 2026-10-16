@@ -261,3 +261,60 @@ index 08f83e5..ae2ee35 100755
  #   else
          setup(windowHandle, listener, pthread_self());
  #   endif
+diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
+index 2ef2ef5..cd096d0 100644
+--- a/src/hle/rt64_present_queue.cpp
++++ b/src/hle/rt64_present_queue.cpp
+@@ -15,6 +15,42 @@ namespace RT64 {
+     // Frames presented to the screen so far (Conker: its FPS counter reads it, host/src/fps_counter.cpp).
+     static std::atomic<uint64_t> presentedFrames = 0;
+ 
++#if defined(__SWITCH__)
++}
++
++namespace plume {
++    extern std::atomic<uint32_t> switchPipelineCount;
++    extern std::atomic<uint64_t> switchPipelineMicroseconds;
++}
++
++namespace RT64 {
++    // Every 2 s, a log line that splits the frame time: presents per second, RT64's average times (ms),
++    // and the pipelines made since the last line with the time spent making them.
++    static void logSwitchFrameStats(const PresentQueue &presentQueue, const WorkloadQueue &workloadQueue) {
++        static Timestamp lastTimestamp = Timer::current();
++        static uint64_t lastFrames = 0;
++        static uint32_t lastPipelines = 0;
++        static uint64_t lastPipelineMicroseconds = 0;
++        const Timestamp now = Timer::current();
++        const double seconds = std::chrono::duration<double>(now - lastTimestamp).count();
++        if (seconds < 2.0) {
++            return;
++        }
++        const uint64_t frames = presentedFrames.load(std::memory_order_relaxed);
++        const uint32_t pipelines = plume::switchPipelineCount.load(std::memory_order_relaxed);
++        const uint64_t pipelineMicroseconds = plume::switchPipelineMicroseconds.load(std::memory_order_relaxed);
++        fprintf(stderr, "[rt64] %.1f presents/s; ms: present %.1f, renderer CPU %.1f, GPU %.1f, matching %.1f, workload %.1f; "
++            "pipelines +%u in %.0f ms\n", (frames - lastFrames) / seconds, presentQueue.presentProfiler.average(),
++            workloadQueue.rendererCPUProfiler.average(), workloadQueue.rendererGPUProfiler.average(),
++            workloadQueue.matchingProfiler.average(), workloadQueue.workloadProfiler.average(), pipelines - lastPipelines,
++            (pipelineMicroseconds - lastPipelineMicroseconds) / 1000.0);
++        lastTimestamp = now;
++        lastFrames = frames;
++        lastPipelines = pipelines;
++        lastPipelineMicroseconds = pipelineMicroseconds;
++    }
++#endif
++
+     uint64_t presentedFrameCount() {
+         return presentedFrames.load(std::memory_order_relaxed);
+     }
+@@ -413,6 +449,9 @@ namespace RT64 {
+                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
+                 presentedFrames.fetch_add(1, std::memory_order_relaxed);
+                 presentProfiler.logAndRestart();
++#if defined(__SWITCH__)
++                logSwitchFrameStats(*this, *ext.workloadQueue);
++#endif
+             }
+         }
+     }
