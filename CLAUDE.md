@@ -372,3 +372,12 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     as DK64Recomp-NX needed on hardware.
   - `plume-switch.patch`: a fence wait logs `[gpu] still waiting for a fence after N s` every 2 s instead of waiting
     without a limit, and a failed `vkQueuePresentKHR` logs its error code.
+- **Result on hardware (e1e86c1): the bar door no longer hangs.** Conker walks into the bar. The only change that
+  can explain it is nvdrv's transfer memory, 8 → 32 MB. Speed with Original resolution: outside, on the path to the
+  bar, 2-10 fps; inside the bar, 25-26 fps. Cutscenes are skipped (Skip Intro build, de4053b).
+- **For the next run: the frame time split in the log.** Every 2 s RT64's present queue writes
+  `[rt64] N presents/s; ms: present, renderer CPU, GPU, matching, workload; pipelines +N in M ms`.
+  The averages are RT64's own profilers (its inspector's Render tab). Pipelines are counted in plume around
+  `vkCreateGraphicsPipelines` / `vkCreateComputePipelines` (cache hits included). If 2-10 fps outdoors comes with
+  many pipelines and hundreds of ms, it is pipeline compiles. If it comes with a high renderer CPU, it is RT64's CPU
+  side. If GPU is high, it is the GPU.
