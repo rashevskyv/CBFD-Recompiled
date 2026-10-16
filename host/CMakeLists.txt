@@ -79,6 +79,28 @@ if (NOT CONKER_HOST_ONLY)
         message(FATAL_ERROR "RecompiledFuncs/ is out of date (${RECOMP_INPUTS} changed since it was generated): run build.cmd / build.sh, or `python recomp/recompile.py`, then build again.")
     endif()
     file(GLOB RECOMPILED_FUNCS CONFIGURE_DEPENDS "${REPO_ROOT}/RecompiledFuncs/funcs_*.c")
+    if (CONKER_SWITCH)
+        # Skip Intro and Skip Any Cutscene, built in (switch/switch_mods.cpp): the Switch can't patch
+        # code for mods. The game's definitions of the functions they hook are renamed <name>_orig in
+        # copies of their files, so every call, and the function table, reaches the host's version.
+        set(SWITCH_HOOKED func_151DE6D4 func_15007A70 func_1501E05C)
+        foreach (source IN LISTS RECOMPILED_FUNCS)
+            file(READ "${source}" text)
+            set(renamed "${text}")
+            foreach (func IN LISTS SWITCH_HOOKED)
+                string(REPLACE "RECOMP_FUNC void ${func}(" "RECOMP_FUNC void ${func}_orig(" renamed "${renamed}")
+            endforeach()
+            if (NOT renamed STREQUAL text)
+                get_filename_component(name "${source}" NAME)
+                set(copy "${CMAKE_CURRENT_BINARY_DIR}/switch_hooked/${name}")
+                file(WRITE "${copy}.new" "${renamed}")
+                # Only rewritten when it changes, so it isn't recompiled on every configure.
+                configure_file("${copy}.new" "${copy}" COPYONLY)
+                list(REMOVE_ITEM RECOMPILED_FUNCS "${source}")
+                list(APPEND RECOMPILED_FUNCS "${copy}")
+            endif()
+        endforeach()
+    endif()
     add_library(RecompiledFuncs STATIC ${RECOMPILED_FUNCS} "${REPO_ROOT}/RecompiledFuncs/tlb_pages.c")
     target_include_directories(RecompiledFuncs PRIVATE
         "${REPO_ROOT}/tools/N64ModernRuntime/N64Recomp/include"
@@ -129,7 +151,7 @@ target_sources(ConkerRecomp PRIVATE
     src/mouse_camera.cpp
 )
 if (CONKER_SWITCH)
-    target_sources(ConkerRecomp PRIVATE switch/switch_nx.cpp switch/switch_compat.c switch/nx_sljit.c)
+    target_sources(ConkerRecomp PRIVATE switch/switch_nx.cpp switch/switch_compat.c switch/nx_sljit.c switch/switch_mods.cpp)
     # Threads get at least 2 MB of stack, not libnx's 128 KB (switch_nx.cpp).
     target_link_options(ConkerRecomp PRIVATE "LINKER:--wrap=__syscall_thread_create")
 endif()

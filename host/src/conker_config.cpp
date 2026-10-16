@@ -15,6 +15,12 @@
 
 #include "conker.hpp"
 
+#ifdef __SWITCH__
+namespace conker::switch_mods {
+    void add_options(recomp::config::Config& config);
+}
+#endif
+
 namespace {
     // Cutscene Aspect Ratio (cutscene_aspect.cpp), on the Graphics tab.
     const std::string cutscene_aspect_id = "cutscene_aspect";
@@ -166,7 +172,12 @@ void conker::init_config() {
     general_options.has_rumble_strength = false;
     general_options.has_gyro_sensitivity = false;
     general_options.has_mouse_sensitivity = false;
-    conker::rumble::add_options(recompui::config::create_general_tab(general_options));
+    recomp::config::Config& general_config = recompui::config::create_general_tab(general_options);
+    conker::rumble::add_options(general_config);
+#ifdef __SWITCH__
+    // Skip Intro and Skip Cutscenes: the two mods, built in (switch/switch_mods.cpp).
+    conker::switch_mods::add_options(general_config);
+#endif
     conker::look_aim::add_camera_options(recompui::config::create_config_tab("Camera", camera_tab_id, false));
     conker::look_aim::add_mouse_gyro_options(recompui::config::create_config_tab("Mouse & Gyro", mouse_gyro_tab_id, false));
 

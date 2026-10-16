@@ -336,5 +336,21 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   - The game says "Insert Rumble Pack". `frontend.cpp` `get_connected_device_info` reports a Rumble Pak on port 1
     in single-player mode. Not yet known: where the message shows, and whether the PC build shows it too.
 - **Skip Intro and Skip Any Cutscene** (`mods/skip_intro`, `mods/skip_cutscenes`) don't work on the Switch: they hook
-  game functions, and the Switch build has no function patching and no LiveRecomp JIT. To have them: build them in
-  (recompile the mods' C with the game), or add the JIT ("port plan", item 5).
+  game functions, and the Switch build has no function patching and no LiveRecomp JIT. Now built in: see the next
+  entry.
+
+### 2026-10-16: Skip Intro and Skip Cutscenes built in (not yet run on hardware)
+
+- The two mods' logic is now host code: `host/switch/switch_mods.cpp`, line for line from `mods/skip_intro` and
+  `mods/skip_cutscenes`.
+- How the hooks work without code patching: on the Switch, `host/CMakeLists.txt` copies the recompiled files that
+  define `func_151DE6D4`, `func_15007A70` and `func_1501E05C` into the build folder, with only the definitions renamed
+  `<name>_orig`. Every call, and the function table (`recomp_overlays.inl`), then reaches the host function of that
+  name, which calls `_orig`. `RecompiledFuncs/` and the PC builds are unchanged.
+  - Not `-Wl,--wrap`: it only redirects undefined references, and two of the three functions are called from their
+    own file.
+  - The host's call to `func_1501C730(6, 0x1D, 0, 0, 1)` makes its own stack frame below `$sp` (the fifth argument is
+    on the stack), and saves and restores the whole `recomp_context`.
+- Settings on the General tab (Switch only): **Skip Intro** Off/On (default On; read at boot), **Skip Cutscenes**
+  Off/On/All (default All: L skips any cutscene, Start skips the chainsaw opening, All also the "unskippable" ones,
+  the mod's `skip_unskippable`).
