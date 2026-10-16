@@ -406,3 +406,12 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - **Button glyphs:** the UI showed positional / Xbox glyphs. `recompfrontend-switch.patch` (`input_types.cpp`):
   on the Switch SDL's A/B/X/Y (by position) show the Switch's labels B/A/Y/X (PromptFont's letters), Back/Start
   show −/+, the shoulders L/R, the triggers ZL/ZR. Not yet seen on hardware.
+- **Freeze in the launcher (a1f457f, the first launch with the glyphs):** input stopped at the main menu, then the
+  whole console froze. `cbfd_log.txt` ends right after `[audio] 48000 Hz` / `SDL_GetWindowDisplayIndex failed`,
+  about 8 s after start, with no `[rt64]` line.
+  - The good run (e8a3aa6) has the same lines and then a gap: no `[nx] N s` line from 9 s to 15 s. The log thread
+    (priority 0x3B) got no CPU for 6 s while the launcher started. The frozen run never came out of that gap.
+  - Every glyph the change uses is in `promptfont.ttf` (checked with fontTools), and the change only returns other
+    codepoints. So the glyphs are not a known cause. It may be the same unreliable hang as the bar door.
+  - Next run: the log thread runs at priority 0x20 (above the game's 0x29-0x2E), so a hang still gets lines. If the
+    `[nx] N s` lines go on, the CPU runs and the GPU or the display is stuck. If they stop, the whole system is.

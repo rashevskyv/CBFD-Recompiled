@@ -60,8 +60,9 @@ namespace {
         std::fclose(stderr);
         stderr = stdout;
         log_flush_running = true;
-        // Low priority, on core 0 (never core 3, the system's).
-        if (R_SUCCEEDED(threadCreate(&log_flush_thread, log_flush_loop, nullptr, nullptr, 0x4000, 0x3B, 0))) {
+        // Above the game's threads (0x29-0x2E), on core 0 (never core 3, the system's): at 0x3B it got no CPU
+        // for 6 s while the launcher started, so a hang there left no lines. It sleeps between flushes.
+        if (R_SUCCEEDED(threadCreate(&log_flush_thread, log_flush_loop, nullptr, nullptr, 0x4000, 0x20, 0))) {
             threadStart(&log_flush_thread);
         }
     }
