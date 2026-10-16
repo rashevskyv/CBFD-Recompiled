@@ -6,7 +6,7 @@
 # Needs devkitPro in $DEVKITPRO, and (once):
 #   apt install python3-pip flex bison libclang-dev llvm-15-dev libllvmspirvlib-15-dev libclc-15-dev libclang-15-dev
 #   pip3 install --break-system-packages meson mako pyyaml
-#   rustup toolchain install nightly --component rust-src rustfmt
+#   rustup toolchain install nightly --component rust-src,rustfmt
 #   rustup target add aarch64-unknown-linux-gnu --toolchain nightly
 #   cargo install bindgen-cli cbindgen
 #   SPIRV-Tools >= 2024.1 (vulkan-sdk-1.3.290.0) in /usr/local

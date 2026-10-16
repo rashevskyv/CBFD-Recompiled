@@ -278,3 +278,40 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - Docs for the user's own machine:
   - `docs/switch-port/local-build.md` (WSL: clone, devkitPro, NVK, `switch/build.sh --rom`, `deploy.sh`);
   - `docs/switch-port/hardware-tests.md` (vktest, then the game: which log lines to look for).
+
+### 2026-10-16: first hardware run (local WSL build, user's console, handheld, title takeover)
+
+- **Local build** (WSL Ubuntu 24.04, 16 cores), with `docs/switch-port/local-build.md`:
+  - There was no prebuilt NVK, so `switch/build-nvk.sh` built it here (`libvulkan.a`, 89 MB, mesa-switch `0ff5207`).
+    Its prerequisites came from the script header. SPIRV-Tools `vulkan-sdk-1.3.290.0` was built from source (2024.3.1).
+  - Pitfall: rustup now needs `--component rust-src,rustfmt` (with a comma). The header said `rust-src rustfmt`,
+    and rustup reads `rustfmt` as a toolchain name. The header is fixed.
+  - Pitfall: WSL's disk is one `ext4.vhdx` file on a Windows drive. Here it was on D:, which was full. The clone filled
+    it, and WSL gave `Input/output error` on every write until space was freed. Check the free space on the vhdx's drive
+    first, not only `df /` in WSL.
+  - `switch/build.sh --vktest`, then `switch/build.sh` (RecompiledFuncs from `recomp/recompile.py`): both link.
+    `deploy.sh <ip> push` works with the console's FTP server on port 5000.
+- **vktest.nro: NVK works.**
+  - Every call returns 0. `GPU: NVIDIA Tegra X1 (GM20B) (NVK GM20B), Vulkan 1.4.354, driver 0x6802004`.
+  - `features: dualSrcBlend 1, depthClamp 1, independentBlend 1, samplerAnisotropy 1, sampleRateShading 1`.
+  - `surface: 1280x720, images 3-3, usage 0x8009F, transforms 0x1`, `surface format 37`.
+  - `done: 603 frames` in 10 s (60 fps, FIFO), then `exit`.
+  - **After it quit, the system showed an error, and the menu (kefir-hub) crashed.** vktest returned without
+    destroying anything (swapchain, surface, device, instance). It now destroys them in reverse order and logs
+    `destroyed`. Not yet tested on hardware.
+- **ConkerRecomp.nro: it boots and plays.** The launcher shows, input works, and the game reaches the intro
+  (scenes 0x25, 0x21, 0x1D, 0x18).
+  - `[nx] memory: 3285 MB` (title takeover).
+  - `[nx_memory] reserved 0x100000000 bytes`, then `mapped 0x4000000` (RDRAM), `0x210000` and `0x10000` (TLB pages).
+    **Code memory with MapOwner at a chosen address works** (the open question in "port plan").
+  - RT64 runs on NVK: `Pipeline cache: 0 bytes read` on the first run. `vkpipecache.bin` was 2.9 MB after it.
+  - `[audio] 48000 Hz, 1024-frame chunks`, then `22020 Hz` in game.
+  - Saves and config: the `.json` files and their `.bak` copies are written to `sdmc:/switch/cbfd/`.
+  - **Speed: about 24 fps, sometimes up to 30** (Show FPS). The user wants 60, or a stable 30. The settings were the
+    defaults: `msaa_option MSAA2X`, `res_option Auto`, `conker_detail AlwaysHighest`, `rr_option Display`. Whether the
+    CPU or the GPU is the limit is not measured yet.
+  - **The pause menu shows wrong graphics.** The user took a screenshot. It is not read yet.
+  - `[frontend] SDL_CreateWindow failed: Could not get EGL display`, then `SDL_GetWindowDisplayIndex failed. Error:
+    Invalid window.` (twice). The SDL window is never made, because the EGL stubs fail. RT64 still presents
+    through `nwindowGetDefault()`. Anything that asks SDL for the window or its size gets nothing.
+  - SDL lists 8 `Switch Controller`s: switch-sdl2 opens all 8 npad slots.

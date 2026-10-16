@@ -219,6 +219,23 @@ int main(int argc, char** argv) {
     }
     log_line("done: %u frames", frames);
     vkDeviceWaitIdle(device);
+    /* Without this, the menu (kefir-hub) crashed after vktest quit on hardware: release the window's buffers. */
+    LOADD(vkDestroySemaphore);
+    LOADD(vkDestroyFence);
+    LOADD(vkDestroyCommandPool);
+    LOADD(vkDestroySwapchainKHR);
+    LOADD(vkDestroyDevice);
+    LOAD(instance, vkDestroySurfaceKHR);
+    LOAD(instance, vkDestroyInstance);
+    vkDestroySemaphore(device, rendered, NULL);
+    vkDestroySemaphore(device, acquired, NULL);
+    vkDestroyFence(device, fence, NULL);
+    vkDestroyCommandPool(device, pool, NULL);
+    vkDestroySwapchainKHR(device, swapchain, NULL);
+    vkDestroyDevice(device, NULL);
+    vkDestroySurfaceKHR(instance, surface, NULL);
+    vkDestroyInstance(instance, NULL);
+    log_line("destroyed");
 
 done:
     log_line("exit");
