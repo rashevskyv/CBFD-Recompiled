@@ -325,5 +325,6 @@ if (CONKER_SWITCH AND NOT CONKER_HOST_ONLY)
             expat zstd z nx m stdc++)
     endif()
     nx_generate_nacp(ConkerRecomp.nacp NAME "Conker's Bad Fur Day: Recompiled" AUTHOR "CBFD-Recompiled" VERSION "0.1.6")
-    nx_create_nro(ConkerRecomp NACP ConkerRecomp.nacp)
+    # The launcher's acorn (host/assets/thumbnail.png), 256x256: without one the homebrew menu shows libnx's.
+    nx_create_nro(ConkerRecomp NACP ConkerRecomp.nacp ICON "${REPO_ROOT}/switch/icon.jpg")
 endif()

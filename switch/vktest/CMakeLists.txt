@@ -13,4 +13,4 @@ target_include_directories(vktest PRIVATE
 target_link_libraries(vktest PRIVATE "-Wl,-u,vk_icdGetInstanceProcAddr" "${CONKER_NVK_SDK}/lib/libvulkan.a"
     expat zstd z nx m stdc++)
 nx_generate_nacp(vktest.nacp NAME "CBFD vktest" AUTHOR "CBFD-Recompiled" VERSION "0.1")
-nx_create_nro(vktest NACP vktest.nacp)
+nx_create_nro(vktest NACP vktest.nacp ICON "${CMAKE_CURRENT_SOURCE_DIR}/../icon.jpg")
