@@ -323,3 +323,14 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     Invalid window.` (twice). The SDL window is never made, because the EGL stubs fail. RT64 still presents
     through `nwindowGetDefault()`. Anything that asks SDL for the window or its size gets nothing.
   - SDL lists 8 `Switch Controller`s: switch-sdl2 opens all 8 npad slots.
+- **Second run, the user's report** (Original resolution, MSAA off, 60 Hz target, no log yet):
+  - Cutscenes: a stable 30 fps. In play: mostly 30, interpolated to 60, but it often drops to about 20.
+  - **Conker walking through the bar door at the start of the game: 2-4 fps.** Inside the bar: 26-28 fps.
+    Probable cause: new pipelines. RT64 draws with ubershaders until each specialised pipeline is compiled, and
+    the ubershader is heavy on the Tegra X1. To check: play the same place again (the pipeline cache is on the SD card now).
+  - The N64 game itself runs at 20-30 fps in heavy scenes, so a stable 30 or 60 game rate needs more than a faster renderer.
+  - The game says "Insert Rumble Pack". `frontend.cpp` `get_connected_device_info` reports a Rumble Pak on port 1
+    in single-player mode. Not yet known: where the message shows, and whether the PC build shows it too.
+- **Skip Intro and Skip Any Cutscene** (`mods/skip_intro`, `mods/skip_cutscenes`) don't work on the Switch: they hook
+  game functions, and the Switch build has no function patching and no LiveRecomp JIT. To have them: build them in
+  (recompile the mods' C with the game), or add the JIT ("port plan", item 5).
