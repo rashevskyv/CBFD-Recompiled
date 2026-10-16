@@ -351,7 +351,8 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     own file.
   - The host's call to `func_1501C730(6, 0x1D, 0, 0, 1)` makes its own stack frame below `$sp` (the fifth argument is
     on the stack), and saves and restores the whole `recomp_context`.
-- Settings on the General tab (Switch only): **Skip Intro** Off/On (default On; read at boot), **Skip Cutscenes**
+- Settings on the General tab (Switch only): **Skip Intro** Off/On (default Off since the user's first test: they want
+  cutscenes to play and be skipped by a button press, not removed; read at boot), **Skip Cutscenes**
   Off/On/All (default All: L skips any cutscene, Start skips the chainsaw opening, All also the "unskippable" ones,
   the mod's `skip_unskippable`).
 

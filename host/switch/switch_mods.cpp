@@ -58,8 +58,9 @@ namespace conker::switch_mods {
         };
         config.add_enum_option(skip_intro_id, "Skip Intro",
             "Starts the game outside the bar, one button press away from the main menu: skips the notices, "
-            "the Nintendo logo and the chainsaw opening. Takes effect the next time the game starts.",
-            intro, SkipIntro::On);
+            "the Nintendo logo and the chainsaw opening. Takes effect the next time the game starts. "
+            "Off by default: Skip Cutscenes lets you skip them one by one instead.",
+            intro, SkipIntro::Off);
         config.add_enum_option(skip_cutscenes_id, "Skip Cutscenes",
             "<recomp-color primary>On</recomp-color> lets L skip a cutscene even the first time it plays, and "
             "Start skip the chainsaw opening. <recomp-color primary>All</recomp-color> also lets L skip the "
