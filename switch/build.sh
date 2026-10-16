@@ -4,6 +4,7 @@
 # Needs devkitPro (devkitA64, libnx, switch-sdl2, switch-freetype, switch-libzstd) in $DEVKITPRO
 # (default /opt/devkitpro); the devkitpro/devkita64 Docker image has all of them.
 #   --host-only  compile everything but the recompiled game, and link nothing (no ROM needed)
+#   --vktest     only build vktest.nro, the NVK clear-screen check (switch/vktest/)
 # The game itself needs RecompiledFuncs/ (made from your ROM by ./build.sh, or
 # `python3 recomp/recompile.py`), and Mesa's NVK for the Switch in $NVK_SDK (see CLAUDE.md).
 set -e
@@ -11,10 +12,12 @@ set -e
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 HOST_ONLY=OFF
+VKTEST=
 for arg in "$@"; do
     case "$arg" in
         --host-only) HOST_ONLY=ON ;;
-        -h|--help) sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --vktest) VKTEST=1 ;;
+        -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 1 ;;
     esac
 done
@@ -29,6 +32,18 @@ fail() { printf '\nError: %s\n' "$*" >&2; exit 1; }
 for cmd in git cmake ninja c++; do
     command -v "$cmd" >/dev/null 2>&1 || fail "$cmd is missing."
 done
+if [ -n "$VKTEST" ]; then
+    [ -n "$NVK_SDK" ] || fail "--vktest needs NVK_SDK (mesa-switch's install prefix)."
+    git submodule update --init tools/rt64
+    git -C tools/rt64 submodule update --init src/contrib/plume
+    git -C tools/rt64/src/contrib/plume submodule update --init contrib/Vulkan-Headers
+    cmake -S switch/vktest -B host/build-switch-vktest -G Ninja \
+        -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Switch.cmake" -DCMAKE_BUILD_TYPE=Release \
+        -DCONKER_NVK_SDK="$NVK_SDK"
+    cmake --build host/build-switch-vktest
+    printf '\nDone: %s/host/build-switch-vktest/vktest.nro\n' "$ROOT"
+    exit 0
+fi
 if [ "$HOST_ONLY" = OFF ] && [ ! -f RecompiledFuncs/inputs.sha256 ]; then
     fail "RecompiledFuncs/ is missing: run ./build.sh with your ROM first, or use --host-only."
 fi

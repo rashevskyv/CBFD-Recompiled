@@ -151,8 +151,8 @@ if (CONKER_RT64)
         set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "" FORCE)
         add_compile_definitions(PLUME_SDL_VULKAN_ENABLED RT64_SDL_WINDOW_VULKAN)
         # switch-sdl2 brings devkitPro's old EGL/glapi/drm_nouveau (switch-mesa 20.1), which must not be
-        # linked next to mesa-switch's NVK: take them out of SDL2's target (the NRO links NVK's own EGL
-        # and glapi), and make it the one target every directory's find_package(SDL2) sees.
+        # linked next to mesa-switch's NVK: take them out of SDL2's target (sdl_egl_stubs.c answers
+        # SDL's EGL calls), and make it the one target every directory's find_package(SDL2) sees.
         find_package(SDL2 REQUIRED)
         get_target_property(sdl_link_libraries SDL2::SDL2-static INTERFACE_LINK_LIBRARIES)
         list(FILTER sdl_link_libraries EXCLUDE REGEX "^(-l)?(EGL|glapi|drm_nouveau)$")
@@ -307,14 +307,14 @@ endif()
 if (CONKER_SWITCH AND NOT CONKER_HOST_ONLY)
     # The NRO. Needs an NVK build (NVK_SDK): see CLAUDE.md, Findings.
     if (CONKER_RT64)
-        # Mesa's NVK for the Switch (danfromtico/mesa-switch), installed with its EGL and glapi
-        # (switch-sdl2's own are taken out of its target above).
+        # Mesa's NVK for the Switch (danfromtico/mesa-switch, its Vulkan-only build): lib/libvulkan.a.
+        # SDL's EGL calls (for OpenGL windows, never opened) go to sdl_egl_stubs.c.
         set(CONKER_NVK_SDK "" CACHE PATH "mesa-switch install prefix, with lib/libvulkan.a")
         if (NOT EXISTS "${CONKER_NVK_SDK}/lib/libvulkan.a")
             message(FATAL_ERROR "The Switch build needs Mesa's NVK: set NVK_SDK (CONKER_NVK_SDK) to mesa-switch's install prefix.")
         endif()
+        target_sources(ConkerRecomp PRIVATE switch/sdl_egl_stubs.c)
         target_link_libraries(ConkerRecomp PRIVATE
-            "${CONKER_NVK_SDK}/lib/libEGL.a" "${CONKER_NVK_SDK}/lib/libglapi.a"
             # The driver's entry point (plume's volkInitializeCustom); not --whole-archive, which
             # brings in duplicate entry points.
             "-Wl,-u,vk_icdGetInstanceProcAddr" "${CONKER_NVK_SDK}/lib/libvulkan.a"
