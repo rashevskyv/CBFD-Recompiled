@@ -11,8 +11,9 @@ time_t timegm(struct tm* tm) {
     return mktime(tm);
 }
 
-/* newlib declares it but doesn't provide it (sse2neon's _mm_malloc uses it). */
-int posix_memalign(void** memptr, size_t alignment, size_t size) {
+/* newlib declares it but doesn't provide it (sse2neon's _mm_malloc uses it). Weak: mesa-switch's NVK
+   brings its own. */
+__attribute__((weak)) int posix_memalign(void** memptr, size_t alignment, size_t size) {
     void* memory = memalign(alignment, size);
     if (memory == NULL) {
         return ENOMEM;

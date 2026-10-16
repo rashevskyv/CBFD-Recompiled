@@ -215,3 +215,33 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     use SDL and recompinput without `CONKER_RT64`, so it is not a Switch target.
 - CMake pitfall: it removes a repeated `-include` flag, which leaves the second header as a lone input file.
   That gives "cannot specify -o with multiple files". Use `"SHELL:-include <file>"`.
+
+### 2026-10-16: step 4, NVK built, the NRO links (not yet run on hardware)
+
+- **Renderer choice:** NVK first, then a deko3d backend for plume. The user expects deko3d to be much faster (it is
+  for the Switch PS2 emulator). The design and the work for that are in `docs/switch-port/deko3d-design.md`:
+  - the shaders go through DXC → spirv-cross → uam;
+  - the 8192-texture array stays, through bindless handles;
+  - estimate 2-3 months.
+- **NVK:** danfromtico/mesa-switch `0ff5207` (Mesa 26.2.4, newer than the 1a8c1a66d6f the Xbox ports use).
+  - We do *not* apply nfsmw-nx's patch, because it is GPLv3.
+  - `switch/build-nvk.sh` builds it on Ubuntu 24.04 without mesa-switch's Docker image. That image's `build-switch.sh` is
+    out of date. Pitfalls:
+    - Rust for the console must be `aarch64-unknown-linux-gnu`: `MESA_SWITCH_RUST_TARGET` is read by
+      `rustc-switch-wrapper.sh`, and only `build-unified.sh` sets it. Without it, NAK's Rust objects are x86-64, and the
+      link gives "file in wrong format".
+    - Proc-macros run on the build machine, so a native file must point `rust` at the plain rustc. Otherwise
+      "rust-lld: --fix-cortex-a53-843419 is only supported on AArch64".
+    - meson picks Ubuntu's llvm-config-18. The host tools need `llvm-config` 15 through a native file.
+    - `rustfmt` is needed (not fatal).
+  - The result is `libvulkan.a`, 94 MB, 921 aarch64 objects (merged from libnvk, NAK, NIR, …).
+- **`vktest.nro`** (`switch/build.sh --vktest`, `switch/vktest/vktest.c`) links: instance → device → VI swapchain →
+  coloured clears for 10 s. It logs to `sdmc:/switch/cbfd/vktest_log.txt`.
+- **`ConkerRecomp.nro`** links (35 MB NRO, 330 MB ELF):
+  - The link is `-Wl,-u,vk_icdGetInstanceProcAddr libvulkan.a expat zstd z nx m stdc++`.
+  - switch-sdl2's EGL calls (only for GL windows) go to `host/switch/sdl_egl_stubs.c`.
+  - mesa-switch defines `posix_memalign`, so ours is weak.
+- **Thread stacks:** libnx's `__syscall_thread_create` gives a thread made without a stack size **128 KB**. That covers
+  every `std::thread`: the game's, RT64's and the launcher's. Windows gives 1 MB. `switch_nx.cpp` raises it to 2 MB through
+  `-Wl,--wrap=__syscall_thread_create`. Found by disassembling libnx's `newlib.o` (`mov x0, #0x20000`).
+- The NRO contains the recompiled game: it is built from the ROM, so it is never committed or published.

@@ -130,6 +130,8 @@ target_sources(ConkerRecomp PRIVATE
 )
 if (CONKER_SWITCH)
     target_sources(ConkerRecomp PRIVATE switch/switch_nx.cpp switch/switch_compat.c switch/nx_sljit.c)
+    # Threads get at least 2 MB of stack, not libnx's 128 KB (switch_nx.cpp).
+    target_link_options(ConkerRecomp PRIVATE "LINKER:--wrap=__syscall_thread_create")
 endif()
 if (MSVC)
     set_source_files_properties("${REPO_ROOT}/RecompiledFuncs/rsp/audio_ucode.cpp" PROPERTIES COMPILE_OPTIONS "/W0;/bigobj")

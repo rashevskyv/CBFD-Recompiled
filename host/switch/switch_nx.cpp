@@ -78,6 +78,20 @@ extern "C" void userAppExit(void) {
     std::fflush(stdout);
 }
 
+// libnx gives a thread made without a stack size (every std::thread: the game's threads, RT64's,
+// the launcher's) only 128 KB, too little for the recompiled code (Windows gives 1 MB). The linker
+// sends pthread_create's call here (host/CMakeLists.txt, --wrap), to raise it to 2 MB.
+constexpr size_t min_thread_stack = 2 * 1024 * 1024;
+
+extern "C" int __real___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size);
+
+extern "C" int __wrap___syscall_thread_create(void** thread, void* (*func)(void*), void* arg, void* stack_addr, size_t stack_size) {
+    if (stack_addr == nullptr && stack_size < min_thread_stack) {
+        stack_size = min_thread_stack;
+    }
+    return __real___syscall_thread_create(thread, func, arg, stack_addr, stack_size);
+}
+
 extern "C" void __libnx_exception_handler(ThreadExceptionDump* ctx) {
     const uintptr_t base = reinterpret_cast<uintptr_t>(__start__);
     std::fprintf(stdout, "[nx] crash: exception 0x%X, pc 0x%llX (ELF +0x%llX), lr 0x%llX (ELF +0x%llX), "
