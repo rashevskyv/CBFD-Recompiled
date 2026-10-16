@@ -35,7 +35,12 @@ namespace {
         want.freq = (int)frequency;
         want.format = AUDIO_F32SYS;
         want.channels = channels;
+#if defined(__SWITCH__)
+        // switch-sdl2's audio output needs bigger chunks (DK64Recomp-NX found 1024 frames).
+        want.samples = 1024;
+#else
         want.samples = 256; // ~12 ms at 22 kHz: SDL pulls from the queue in chunks this size
+#endif
         // No allowed changes: SDL converts to whatever the output device uses, so the
         // queue stays in the game's sample rate.
         device = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
@@ -43,6 +48,7 @@ namespace {
             std::fprintf(stderr, "[audio] SDL_OpenAudioDevice failed: %s\n", SDL_GetError());
             return;
         }
+        std::printf("[audio] %u Hz, %d-frame chunks\n", frequency, (int)want.samples);
         SDL_PauseAudioDevice(device, 0);
     }
 }

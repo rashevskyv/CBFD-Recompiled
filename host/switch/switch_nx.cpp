@@ -64,6 +64,11 @@ extern "C" void userAppInit(void) {
         std::printf("[nx] warning: started as an applet (type %d): start it with title takeover "
             "(hold R while starting a game) for the full memory\n", (int)type);
     }
+    u64 total = 0, used = 0;
+    svcGetInfo(&total, InfoType_TotalMemorySize, CUR_PROCESS_HANDLE, 0);
+    svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
+    std::printf("[nx] memory: %llu MB, %llu MB used at start\n", (unsigned long long)(total >> 20),
+        (unsigned long long)(used >> 20));
     // Don't let the console sleep while the game runs.
     appletSetAutoSleepDisabled(true);
 }

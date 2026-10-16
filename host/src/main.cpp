@@ -19,6 +19,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -333,6 +334,21 @@ namespace {
     }
 }
 
+bool conker::copy_file(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& error) {
+    error.clear();
+#if defined(__SWITCH__)
+    std::ifstream in(from, std::ios::binary);
+    std::ofstream out(to, std::ios::binary | std::ios::trunc);
+    if (!in || !out || !(out << in.rdbuf()) || !out.flush()) {
+        error = std::make_error_code(std::errc::io_error);
+        return false;
+    }
+    return true;
+#else
+    return std::filesystem::copy_file(from, to, std::filesystem::copy_options::overwrite_existing, error);
+#endif
+}
+
 const char* conker::rom_error_text(recomp::RomValidationError error) {
     switch (error) {
         case recomp::RomValidationError::FailedToOpen:
@@ -389,7 +405,7 @@ namespace {
             std::filesystem::path target = new_dir / std::filesystem::relative(entry.path(), old_dir);
             if (!std::filesystem::exists(target)) {
                 std::filesystem::create_directories(target.parent_path(), error);
-                std::filesystem::copy_file(entry.path(), target, error);
+                conker::copy_file(entry.path(), target, error);
             }
         }
     }

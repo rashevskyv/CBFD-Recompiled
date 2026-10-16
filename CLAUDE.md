@@ -245,3 +245,36 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   every `std::thread`: the game's, RT64's and the launcher's. Windows gives 1 MB. `switch_nx.cpp` raises it to 2 MB through
   `-Wl,--wrap=__syscall_thread_create`. Found by disassembling libnx's `newlib.o` (`mov x0, #0x20000`).
 - The NRO contains the recompiled game: it is built from the ROM, so it is never committed or published.
+
+### 2026-10-16: fixes that need no hardware; local builds
+
+- **Pipeline cache:** plume had none, so every pipeline was compiled from scratch on every run (~60 ms each on
+  NVK, per nfsmw).
+  - `plume-switch.patch` adds a `VkPipelineCache`, used only when `PLUME_VULKAN_PIPELINE_CACHE_FILE` is defined.
+  - The Switch defines it as `sdmc:/switch/cbfd/vkpipecache.bin`.
+  - The cache is loaded after `vkCreateDevice`, and saved at most every 10 s while pipelines are being made (the HOME menu
+    may skip the exit) and again on release.
+  - It is written to `.new` and then renamed, so a crash mid-write keeps the old file.
+  - The PC is unchanged: no cache.
+- **Crash on quit (timer thread):** on the Switch, RDRAM stays mapped at quit, because the process ends right after.
+  On PC it is unchanged (the upstream crash).
+- **`copy_file` on the SD card:**
+  - `conker::copy_file` (main.cpp) copies the bytes on the Switch. It is used by `rom_versions.cpp` and the data migration.
+  - recompui's mod installer does the same.
+  - Saves (`files.cpp`) already rotate with `rename`.
+- **Audio:** SDL chunks are 1024 frames on the Switch, not 256 (DK64Recomp-NX). The log says `[audio] N Hz, …-frame chunks`.
+- **Log lines for the hardware tests:**
+  - `[nx] memory: N MB` (total, and used at start).
+  - `[nx_memory] reserved/mapped …` for every success, not only failures.
+- **`switch/build.sh`:**
+  - It checks everything first and lists what is missing: devkitPro and the portlibs, NVK_SDK, that RT64's DXC runs,
+    RecompiledFuncs.
+  - `--rom` recompiles from the ROM without building the PC version.
+  - `SWITCH_BUILD_DIR` moves the build, and the script warns under `/mnt/`.
+  - Measured:
+    - the largest recompiled file needs 190 MB and 13 s to compile for aarch64;
+    - the final link needs ~1 GB and 75 s;
+    - `host/build-switch` is 2.2 GB.
+- Docs for the user's own machine:
+  - `docs/switch-port/local-build.md` (WSL: clone, devkitPro, NVK, `switch/build.sh --rom`, `deploy.sh`);
+  - `docs/switch-port/hardware-tests.md` (vktest, then the game: which log lines to look for).

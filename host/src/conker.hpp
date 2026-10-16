@@ -25,6 +25,10 @@ namespace conker {
     inline constexpr const char* switch_data_directory = "sdmc:/switch/cbfd";
 #endif
 
+    // std::filesystem::copy_file, overwriting. On the Switch it fails on the SD card (it sets the copy's
+    // permissions, which the SD card refuses, as DK64Recomp-NX found): there the bytes are copied.
+    bool copy_file(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& error);
+
     // overlays.cpp
     void register_overlays();
     void register_tlb_mapped_code();

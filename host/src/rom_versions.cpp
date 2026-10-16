@@ -302,8 +302,7 @@ bool conker::roms::switch_to_next() {
     auto it = std::find(slugs.begin(), slugs.end(), current_slug);
     const std::string& next = (it == slugs.end() || it + 1 == slugs.end()) ? slugs.front() : *(it + 1);
     std::error_code error;
-    std::filesystem::copy_file(versions_dir / (next + ".z64"), stored_path,
-        std::filesystem::copy_options::overwrite_existing, error);
+    conker::copy_file(versions_dir / (next + ".z64"), stored_path, error);
     if (error) {
         std::fprintf(stderr, "[host] Couldn't switch to the %s ROM: %s\n", name_of(next).c_str(), error.message().c_str());
         return false;

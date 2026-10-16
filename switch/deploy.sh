@@ -3,7 +3,7 @@
 # the logs back. From Linux or WSL, on the same network as the console:
 #   switch/deploy.sh <console IP> [push|logs]   (default: push, then nothing else)
 #   SWITCH_FTP_PORT (default 5000), SWITCH_FTP_USER / SWITCH_FTP_PASS if the server asks for them.
-# push: host/build-switch/ConkerRecomp.nro, vktest.nro (when built) and host/assets/ into
+# push: $SWITCH_BUILD_DIR (default host/build-switch)/ConkerRecomp.nro, vktest.nro (when built) and host/assets/ into
 #       sdmc:/switch/cbfd/. The ROM is not copied: put it there once as conker.z64.
 # logs: cbfd_log.txt and vktest_log.txt into switch/logs/ (git-ignored).
 set -e
@@ -21,7 +21,7 @@ fi
 
 case "$ACTION" in
     push)
-        curl -sS $AUTH --ftp-create-dirs -T host/build-switch/ConkerRecomp.nro "$URL/ConkerRecomp.nro"
+        curl -sS $AUTH --ftp-create-dirs -T "${SWITCH_BUILD_DIR:-host/build-switch}/ConkerRecomp.nro" "$URL/ConkerRecomp.nro"
         if [ -f host/build-switch-vktest/vktest.nro ]; then
             curl -sS $AUTH -T host/build-switch-vktest/vktest.nro "$URL/vktest.nro"
         fi

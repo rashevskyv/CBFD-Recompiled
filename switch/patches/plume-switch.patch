@@ -22,7 +22,7 @@ index 0789c20..a3d909f 100644
  cmake_dependent_option(PLUME_APPLE_RETINA_ENABLED "Enable Apple Retina display support" ON APPLE ON)
  option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
 diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
-index f1dd503..97ecc5c 100644
+index f1dd503..45e5032 100644
 --- a/plume_vulkan.cpp
 +++ b/plume_vulkan.cpp
 @@ -15,6 +15,14 @@
@@ -49,7 +49,37 @@ index f1dd503..97ecc5c 100644
  #   endif
      };
  
-@@ -2095,6 +2105,18 @@ namespace plume {
+@@ -1390,11 +1400,13 @@ namespace plume {
+         pipelineInfo.layout = pipelineLayout->vk;
+         pipelineInfo.stage = stageInfo;
+ 
+-        VkResult res = vkCreateComputePipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++        VkResult res = vkCreateComputePipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "vkCreateComputePipelines failed with error code 0x%X.\n", res);
+             return;
+         }
++
++        device->pipelineCreated();
+     }
+ 
+     VulkanComputePipeline::~VulkanComputePipeline() {
+@@ -1649,11 +1661,13 @@ namespace plume {
+         pipelineInfo.layout = pipelineLayout->vk;
+         pipelineInfo.renderPass = renderPass;
+ 
+-        VkResult res = vkCreateGraphicsPipelines(device->vk, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &vk);
++        VkResult res = vkCreateGraphicsPipelines(device->vk, device->pipelineCache, 1, &pipelineInfo, nullptr, &vk);
+         if (res != VK_SUCCESS) {
+             fprintf(stderr, "vkCreateGraphicsPipelines failed with error code 0x%X.\n", res);
+             return;
+         }
++
++        device->pipelineCreated();
+     }
+ 
+     VulkanGraphicsPipeline::~VulkanGraphicsPipeline() {
+@@ -2095,6 +2109,18 @@ namespace plume {
              fprintf(stderr, "vkCreateWin32SurfaceKHR failed with error code 0x%X.\n", res);
              return;
          }
@@ -68,7 +98,7 @@ index f1dd503..97ecc5c 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          VulkanInterface *renderInterface = commandQueue->device->renderInterface;
          SDL_bool sdlRes = SDL_Vulkan_CreateSurface(desc.renderWindow, renderInterface->instance, &surface);
-@@ -2341,6 +2363,14 @@ namespace plume {
+@@ -2341,6 +2367,14 @@ namespace plume {
          createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
          createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
          createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
@@ -83,7 +113,7 @@ index f1dd503..97ecc5c 100644
          createInfo.compositeAlpha = pickedAlphaFlag;
          createInfo.presentMode = requiredPresentMode;
          createInfo.clipped = VK_TRUE;
-@@ -2463,6 +2493,12 @@ namespace plume {
+@@ -2463,6 +2497,12 @@ namespace plume {
          GetClientRect(desc.renderWindow, &rect);
          dstWidth = rect.right - rect.left;
          dstHeight = rect.bottom - rect.top;
@@ -96,7 +126,130 @@ index f1dd503..97ecc5c 100644
  #   elif defined(PLUME_SDL_VULKAN_ENABLED)
          SDL_GetWindowSizeInPixels(desc.renderWindow, (int *)(&dstWidth), (int *)(&dstHeight));
  #   elif defined(__ANDROID__)
-@@ -4464,11 +4500,17 @@ namespace plume {
+@@ -4055,6 +4095,8 @@ namespace plume {
+             return;
+         }
+ 
++        loadPipelineCache();
++
+         for (uint32_t i = 0; i < queueFamilyCount; i++) {
+             for (uint32_t j = 0; j < queueFamilies[i].queues.size(); j++) {
+                 vkGetDeviceQueue(vk, i, j, &queueFamilies[i].queues[j].vk);
+@@ -4429,9 +4471,113 @@ namespace plume {
+         }
+     }
+ 
++    void VulkanDevice::pipelineCreated() {
++#   ifdef PLUME_VULKAN_PIPELINE_CACHE_FILE
++        // Saved as pipelines are made, not only on exit, which a console's HOME menu may skip.
++        // At most every 10 seconds: a save writes the whole cache.
++        std::lock_guard lock(pipelineCacheMutex);
++        pipelinesSinceSave++;
++        if (std::chrono::steady_clock::now() - pipelineCacheSaveTime >= std::chrono::seconds(10)) {
++            savePipelineCache();
++        }
++#   endif
++    }
++
++    void VulkanDevice::loadPipelineCache() {
++#   ifdef PLUME_VULKAN_PIPELINE_CACHE_FILE
++        // The driver checks the data's header (vendor, device, cache UUID) and ignores another build's.
++        std::vector<uint8_t> data;
++        FILE *file = fopen(PLUME_VULKAN_PIPELINE_CACHE_FILE, "rb");
++        if (file != nullptr) {
++            fseek(file, 0, SEEK_END);
++            long size = ftell(file);
++            fseek(file, 0, SEEK_SET);
++            if (size > 0) {
++                data.resize(size_t(size));
++                if (fread(data.data(), 1, data.size(), file) != data.size()) {
++                    data.clear();
++                }
++            }
++
++            fclose(file);
++        }
++
++        VkPipelineCacheCreateInfo cacheInfo = {};
++        cacheInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
++        cacheInfo.initialDataSize = data.size();
++        cacheInfo.pInitialData = data.empty() ? nullptr : data.data();
++        VkResult res = vkCreatePipelineCache(vk, &cacheInfo, nullptr, &pipelineCache);
++        if ((res != VK_SUCCESS) && !data.empty()) {
++            // Unusable data: start empty.
++            cacheInfo.initialDataSize = 0;
++            cacheInfo.pInitialData = nullptr;
++            res = vkCreatePipelineCache(vk, &cacheInfo, nullptr, &pipelineCache);
++        }
++
++        if (res != VK_SUCCESS) {
++            fprintf(stderr, "vkCreatePipelineCache failed with error code 0x%X.\n", res);
++            pipelineCache = VK_NULL_HANDLE;
++            return;
++        }
++
++        fprintf(stderr, "Pipeline cache: %zu bytes read from %s.\n", data.size(), PLUME_VULKAN_PIPELINE_CACHE_FILE);
++        pipelineCacheSaveTime = std::chrono::steady_clock::now();
++#   endif
++    }
++
++    void VulkanDevice::savePipelineCache() {
++#   ifdef PLUME_VULKAN_PIPELINE_CACHE_FILE
++        // Called with pipelineCacheMutex held.
++        if ((pipelineCache == VK_NULL_HANDLE) || (pipelinesSinceSave == 0)) {
++            return;
++        }
++
++        size_t size = 0;
++        if (vkGetPipelineCacheData(vk, pipelineCache, &size, nullptr) != VK_SUCCESS) {
++            return;
++        }
++
++        std::vector<uint8_t> data(size);
++        if (vkGetPipelineCacheData(vk, pipelineCache, &size, data.data()) != VK_SUCCESS) {
++            return;
++        }
++
++        // Written beside, then renamed over the old one, so a crash mid-write keeps the last good cache.
++        const std::string path = PLUME_VULKAN_PIPELINE_CACHE_FILE;
++        const std::string temporaryPath = path + ".new";
++        FILE *file = fopen(temporaryPath.c_str(), "wb");
++        if (file == nullptr) {
++            return;
++        }
++
++        bool written = (fwrite(data.data(), 1, size, file) == size);
++        written = (fclose(file) == 0) && written;
++        if (written) {
++            remove(path.c_str());
++            written = (rename(temporaryPath.c_str(), path.c_str()) == 0);
++        }
++
++        if (written) {
++            pipelinesSinceSave = 0;
++        }
++
++        pipelineCacheSaveTime = std::chrono::steady_clock::now();
++#   endif
++    }
++
+     void VulkanDevice::release() {
+         nullBuffer = nullptr; // force destruction before destroying allocator
+ 
++        if (pipelineCache != VK_NULL_HANDLE) {
++            {
++                std::lock_guard lock(pipelineCacheMutex);
++                savePipelineCache();
++            }
++
++            vkDestroyPipelineCache(vk, pipelineCache, nullptr);
++            pipelineCache = VK_NULL_HANDLE;
++        }
++
+         if (allocator != VK_NULL_HANDLE) {
+             vmaDestroyAllocator(allocator);
+             allocator = VK_NULL_HANDLE;
+@@ -4464,11 +4610,17 @@ namespace plume {
  #else
      VulkanInterface::VulkanInterface() {
  #endif
@@ -114,7 +267,7 @@ index f1dd503..97ecc5c 100644
  
          appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
          appInfo.pApplicationName = "plume";
-@@ -4500,7 +4542,7 @@ namespace plume {
+@@ -4500,7 +4652,7 @@ namespace plume {
          const std::unordered_set<std::string> dlssExtensions = DLSS::getRequiredInstanceExtensionsVulkan();
  #   endif
  
@@ -124,10 +277,18 @@ index f1dd503..97ecc5c 100644
          // SDL2 has this awkward requirement for the window to pull the extensions from. 
          // This can be removed when upgrading to SDL3.
 diff --git a/plume_vulkan.h b/plume_vulkan.h
-index 0a1edbe..f35d112 100644
+index 0a1edbe..3de2679 100644
 --- a/plume_vulkan.h
 +++ b/plume_vulkan.h
-@@ -23,6 +23,9 @@
+@@ -9,6 +9,7 @@
+ 
+ #include "plume_render_interface.h"
+ 
++#include <chrono>
+ #include <mutex>
+ #include <set>
+ #include <unordered_map>
+@@ -23,6 +24,9 @@
  #elif defined(__APPLE__)
  #define VK_USE_PLATFORM_METAL_EXT
  #include "plume_apple.h"
@@ -137,3 +298,19 @@ index 0a1edbe..f35d112 100644
  #endif
  
  // For VK_KHR_portability_subset
+@@ -417,6 +421,15 @@ namespace plume {
+         std::unique_ptr<RenderBuffer> nullBuffer;
+         bool loadStoreOpNoneSupported = false;
+         bool nullDescriptorSupported = false;
++        // Pipelines are created with it. VK_NULL_HANDLE unless PLUME_VULKAN_PIPELINE_CACHE_FILE names
++        // a file to keep it in across runs.
++        VkPipelineCache pipelineCache = VK_NULL_HANDLE;
++        std::mutex pipelineCacheMutex;
++        uint32_t pipelinesSinceSave = 0;
++        std::chrono::steady_clock::time_point pipelineCacheSaveTime;
++        void loadPipelineCache();
++        void savePipelineCache();
++        void pipelineCreated();
+ 
+         VulkanDevice(VulkanInterface *renderInterface, const std::string &preferredDeviceName);
+         ~VulkanDevice() override;

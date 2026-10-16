@@ -163,10 +163,10 @@ index 42c9057..00ecf7e 100644
      memcpy(target_func, data.replaced_bytes.data(), data.replaced_bytes.size());
 diff --git a/librecomp/src/nx_memory.cpp b/librecomp/src/nx_memory.cpp
 new file mode 100644
-index 0000000..052e5cd
+index 0000000..c631a0e
 --- /dev/null
 +++ b/librecomp/src/nx_memory.cpp
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,85 @@
 +#ifdef __SWITCH__
 +
 +#include <cstdio>
@@ -204,6 +204,7 @@ index 0000000..052e5cd
 +        std::fprintf(stderr, "[nx_memory] could not reserve 0x%zX bytes\n", size);
 +        return nullptr;
 +    }
++    std::fprintf(stderr, "[nx_memory] reserved 0x%zX bytes at %p\n", size, address);
 +    return static_cast<uint8_t*>(address);
 +}
 +
@@ -230,6 +231,7 @@ index 0000000..052e5cd
 +        return false;
 +    }
 +    mappings.push_back({ address, backing, handle, size });
++    std::fprintf(stderr, "[nx_memory] mapped 0x%zX bytes at %p\n", size, address);
 +    return true;
 +}
 +
@@ -251,7 +253,7 @@ index 0000000..052e5cd
 +
 +#endif
 diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
-index e061d59..d8fcc80 100644
+index e061d59..27b0cd8 100644
 --- a/librecomp/src/recomp.cpp
 +++ b/librecomp/src/recomp.cpp
 @@ -29,6 +29,8 @@
@@ -276,12 +278,13 @@ index e061d59..d8fcc80 100644
  #else
      rdram = (uint8_t*)mmap(NULL, allocation_size, PROT_NONE, MAP_ANON | MAP_PRIVATE, -1, 0);
      alloc_failed = rdram == reinterpret_cast<uint8_t*>(MAP_FAILED);
-@@ -1023,6 +1031,9 @@ void recomp::start(const recomp::Configuration& cfg) {
+@@ -1023,6 +1031,10 @@ void recomp::start(const recomp::Configuration& cfg) {
  #ifdef _WIN32
      // VirtualFree returns zero on failure.
      free_failed = (VirtualFree(rdram, 0, MEM_RELEASE) == 0);
 +#elif defined(__SWITCH__)
-+    recomp::nx::release();
++    // Left mapped: the timer thread is detached and may still read its timers in RDRAM (the crash on
++    // quit seen on Linux), and the process ends right after.
 +    free_failed = false;
  #else
      // munmap returns -1 on failure.

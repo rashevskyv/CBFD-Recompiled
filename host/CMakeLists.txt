@@ -194,6 +194,8 @@ if (CONKER_RT64)
     if (CONKER_SWITCH)
         # volk's loader includes dlfcn.h, which newlib doesn't have (it's never used: see plume).
         target_include_directories(plume PRIVATE switch/include)
+        # Pipelines take ~60 ms each to build on NVK: keep them on the SD card across runs.
+        target_compile_definitions(plume PRIVATE "PLUME_VULKAN_PIPELINE_CACHE_FILE=\"sdmc:/switch/cbfd/vkpipecache.bin\"")
         # A command-line tool, for the build machine.
         set_target_properties(re-spirv-cli PROPERTIES EXCLUDE_FROM_ALL TRUE)
     endif()
