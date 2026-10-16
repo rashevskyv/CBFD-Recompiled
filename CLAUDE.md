@@ -381,3 +381,28 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   `vkCreateGraphicsPipelines` / `vkCreateComputePipelines` (cache hits included). If 2-10 fps outdoors comes with
   many pipelines and hundreds of ms, it is pipeline compiles. If it comes with a high renderer CPU, it is RT64's CPU
   side. If GPU is high, it is the GPU.
+
+### 2026-10-16: the frame time split on hardware (e8a3aa6)
+
+- Settings: Original resolution, no MSAA, refresh rate Manual 60 (RT64 interpolates the game's frames to 60).
+  The user: 6-14 fps on the path to the bar, 20-26 fps inside.
+- `[rt64]` lines (averages in ms over RT64's last 120 samples):
+
+  | Where | presents/s | present | renderer CPU | GPU | matching | workload | pipelines |
+  |---|---|---|---|---|---|---|---|
+  | Intro (scene 0x21) | 58-60 | 16.7 | 4-8 | 1.5-2.5 | 2.5-5 | 11-22 | +0-5, 0-1 ms |
+  | Path to the bar (scene 0x1D), worst | 2.9-3.9 | 56-91 | 12-13.5 | 4 | **33-66** | 52-83 | +0-2, 0-1 ms |
+  | Path to the bar, then | 38-45 | 21-30 | 8-10 | 2.5-3 | 10-29 | 22-49 | 0 |
+  | In the bar | 22-27 | 38-44 | 7-11 | 2.3 | 9-10.5 | 17-22 | 0 |
+
+- **Not the cause:** pipelines (cache hits, at most 7 ms in 2 s; `vkpipecache.bin` 6.5 MB, read at start) and the
+  GPU (2-4 ms a frame).
+- **The cause outdoors: RT64's frame matching** (`matchingProfiler`, `WorkloadQueue`): it pairs the game's
+  objects between two frames for the interpolation to 60. On the path to the bar it goes up to 33-72 ms a frame,
+  and the screen gets 3-4 frames a second. Next test: refresh rate "Original" (no interpolation, so no
+  matching): if outdoors goes to the game's own 20-30, matching is the whole problem.
+- In the bar: about 24 presents/s with present at ~40 ms, while workload is ~19 ms. The rest is not measured
+  yet: the game's own CPU time (recompiled code, RSP audio) is not in these profilers.
+- **Button glyphs:** the UI showed positional / Xbox glyphs. `recompfrontend-switch.patch` (`input_types.cpp`):
+  on the Switch SDL's A/B/X/Y (by position) show the Switch's labels B/A/Y/X (PromptFont's letters), Back/Start
+  show −/+, the shoulders L/R, the triggers ZL/ZR. Not yet seen on hardware.

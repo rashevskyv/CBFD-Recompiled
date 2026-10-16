@@ -11,6 +11,60 @@ index 899372b..734ae02 100644
      target_include_directories(recompinput PRIVATE ${SDL2_INCLUDE_DIRS})
  endif()
  
+diff --git a/recompinput/src/input_types.cpp b/recompinput/src/input_types.cpp
+index 7db1735..836edfe 100644
+--- a/recompinput/src/input_types.cpp
++++ b/recompinput/src/input_types.cpp
+@@ -86,6 +86,30 @@ const std::string& get_game_input_enum_name(GameInput input) {
+ }
+ 
+ static std::string controller_button_to_string(SDL_GameControllerButton button) {
++#if defined(__SWITCH__)
++    // switch-sdl2 maps by position: SDL's A is the bottom button, which the Switch labels B. Show the Switch's
++    // labels (PromptFont's letters are the same for Nintendo and Xbox, only their places differ).
++    switch (button) {
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_A:
++        return PF_XBOX_B;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_B:
++        return PF_XBOX_A;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_X:
++        return PF_XBOX_Y;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_Y:
++        return PF_XBOX_X;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_BACK:
++        return PF_NINTENDO_MINUS;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_START:
++        return PF_NINTENDO_PLUS;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
++        return PF_NINTENDO_LEFT_SHOULDER;
++    case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
++        return PF_NINTENDO_RIGHT_SHOULDER;
++    default:
++        break;
++    }
++#endif
+     switch (button) {
+     case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_A:
+         return PF_GAMEPAD_A;
+@@ -239,10 +263,18 @@ static std::string controller_axis_to_string(int axis) {
+         return positive ? PF_ANALOG_R_RIGHT : PF_ANALOG_R_LEFT;
+     case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY:
+         return positive ? PF_ANALOG_R_DOWN : PF_ANALOG_R_UP;
++#if defined(__SWITCH__)
++    // ZL and ZR are buttons on the Switch: one glyph each.
++    case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_TRIGGERLEFT:
++        return PF_NINTENDO_LEFT_TRIGGER;
++    case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
++        return PF_NINTENDO_RIGHT_TRIGGER;
++#else
+     case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_TRIGGERLEFT:
+         return positive ? PF_XBOX_LEFT_TRIGGER : PF_XBOX_LEFT_TRIGGER_PULL;
+     case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_TRIGGERRIGHT:
+         return positive ? PF_XBOX_RIGHT_TRIGGER : PF_XBOX_RIGHT_TRIGGER_PULL;
++#endif
+     default:
+         return recompinput::unknown_device_input;
+         //! Does not render correctly. Have not encountered any unknown axis yet.
 diff --git a/recompui/CMakeLists.txt b/recompui/CMakeLists.txt
 index 4dce8e0..84f9f9f 100644
 --- a/recompui/CMakeLists.txt
