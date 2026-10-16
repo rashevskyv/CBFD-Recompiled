@@ -175,6 +175,24 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   4. A pipeline cache (`VkPipelineCache`) on the SD card.
   5. Mods through a writable alias of `.text` and libnx Jit, if wanted.
 
+### 2026-10-16: step 2, Linux baseline (x86-64, cloud, no GPU)
+
+- ROM: the user's private repo `rashevskyv/conker-data` (`n64/conker.z64`, SHA-1 matches). Clone it outside this repo,
+  for example to `/home/user/conker-data`. `./build.sh /home/user/conker-data/n64/conker.z64` takes about 12 minutes on 4 cores, with no errors.
+- Headless run: `host/build/ConkerRecomp --headless --rom <rom> --seconds 60` boots the game.
+  - In 60 s: 3595 VIs (59.9 Hz), 1794 display lists.
+  - Scenes 0x25, 0x21 and 0x1D: the intro.
+- With RT64 on lavapipe (`apt install mesa-vulkan-drivers xvfb`):
+  `VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json xvfb-run -a -s "-screen 0 1600x900x24" ./ConkerRecomp --rom <rom> --seconds 90`
+  - In 90 s: 5342 VIs.
+  - It draws correctly. A screenshot at 65 s (Xvfb plus `import -window root`) shows the widescreen bar scene. The screenshots are not committed, because they come from the ROM.
+- **Crash on quit, already in upstream:** the headless run gets SIGSEGV in `timer_thread` (ultramodern `timer.cpp`).
+  - The timer thread is detached, and it still reads an `OSTimer` in RDRAM after `recomp::start` has unmapped it.
+  - It only happens on quit. On the Switch, `recomp::nx::release()` unmaps in the same way, so expect an exception on quit.
+  - Fix: join the timer, or don't free RDRAM on quit.
+- On quit, the window build also aborts in D-Bus (`dbus_connection_unref`, from NFD_Quit's portal, with no session bus). This only
+  happens in this environment.
+
 ### 2026-10-16: step 3, the Switch build without the ROM
 
 - devkitPro: its pacman (apt.devkitpro.org, pkg.devkitpro.org) is blocked by the proxy, with a 403. The
