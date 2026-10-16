@@ -316,7 +316,11 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     QUIT, CONT.., the stick, the chocolate) draws correctly. The frozen picture behind it is wrong: "NINTENDO PRESENTS"
     has black holes along the edges of its letters, and there are many white horizontal streaks across the screen.
     The overlay says `30 FPS | Game 30`. Probable cause: the game reads its own framebuffer back from RDRAM for the
-    pause background, and RT64's copy of it is wrong on NVK (`hpfb_option` was `Off`). Not yet compared with a PC run.
+    pause background, and RT64's copy of it is wrong on NVK (`hpfb_option` was `Off`).
+    - **Compared with the PC build** (upstream V0.1.6 for Windows, same ROM, same place): the PC has the same black
+      holes along the letters, and its letters are doubled (an older frame behind). The user: "the same mess". So the
+      pause background is wrong in RT64 on every platform, not only on the Switch. The white streaks were not on the
+      PC screenshot. They may be part of the same effect at another moment: not a Switch bug until shown otherwise.
   - The console's screenshots are in `sdmc:/emuMMC/SD00/Nintendo/Album/` (emuMMC), not in `sdmc:/Nintendo/Album/`.
     kefir-hub's web server shows them at `http://<console>/album`.
   - `[frontend] SDL_CreateWindow failed: Could not get EGL display`, then `SDL_GetWindowDisplayIndex failed. Error:
