@@ -89,8 +89,11 @@ patch_tool() {
     tool=$1; shift
     last=
     for patch in "$@"; do last=$patch; done
-    # Done already if the last (Switch) patch is applied.
-    if git -C "$tool" apply --reverse --check "$ROOT/$last" 2>/dev/null; then
+    # Done already if these exact patches were applied (a stamp in the tool's git folder) and the last
+    # (Switch) patch still is. Checking only the last one missed a changed PC patch under it (a merge).
+    stamp="$(git -C "$tool" rev-parse --absolute-git-dir)/cbfd-switch-patches"
+    want=$(cd "$ROOT" && cat "$@" | sha1sum)
+    if [ "$(cat "$stamp" 2>/dev/null)" = "$want" ] && git -C "$tool" apply --reverse --check "$ROOT/$last" 2>/dev/null; then
         return
     fi
     git -C "$tool" reset --hard -q
@@ -98,6 +101,7 @@ patch_tool() {
     for patch in "$@"; do
         git -C "$tool" apply "$ROOT/$patch" || fail "couldn't apply $patch to $tool."
     done
+    echo "$want" > "$stamp"
     echo "  patched $tool"
 }
 
