@@ -134,6 +134,23 @@ index 35a9952..5c7c173 100644
  #else
      static_assert(false, "Not implemented for this platform.");
  #endif
+diff --git a/recompui/src/config/ui_config_tab_graphics.cpp b/recompui/src/config/ui_config_tab_graphics.cpp
+index 4fdf81f..6cb49e9 100644
+--- a/recompui/src/config/ui_config_tab_graphics.cpp
++++ b/recompui/src/config/ui_config_tab_graphics.cpp
+@@ -304,7 +304,12 @@ namespace recompui {
+                 "Framerate",
+                 get_framerate_text(60),
+                 refresh_rate_options,
++#if defined(__SWITCH__)
++                // On the Switch, RT64's frame matching for the interpolation costs 10-70 ms of CPU a frame.
++                ultramodern::renderer::RefreshRate::Original
++#else
+                 ultramodern::renderer::RefreshRate::Display
++#endif
+             );
+ 
+             config.add_number_option(
 diff --git a/recompui/src/util/file.cpp b/recompui/src/util/file.cpp
 index 7ee84ed..87646b5 100644
 --- a/recompui/src/util/file.cpp

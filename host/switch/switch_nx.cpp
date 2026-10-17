@@ -28,6 +28,70 @@ namespace {
     Thread log_flush_thread;
     volatile bool log_flush_running = false;
 
+    // The CPU at 1785 MHz, the highest rate, which the system itself uses while loading: the game and RT64's
+    // CPU side limit the frame rate, and the system gives games 1020 MHz. The old rate comes back on exit.
+    constexpr u32 cpu_clock_wanted = 1785000000;
+    ClkrstSession cpu_clock_session;
+    u32 cpu_clock_old = 0;
+    volatile u32 cpu_clock_set = 0;  // read by the log thread, which starts first
+
+    // Is another process serving this name? (sys-clk's own check: registering it fails as already registered.)
+    bool service_running(const char* name) {
+        Handle handle;
+        const Result rc = smRegisterService(&handle, smEncodeName(name), false, 1);
+        if (R_SUCCEEDED(rc)) {
+            smUnregisterService(smEncodeName(name));
+            svcCloseHandle(handle);
+            return false;
+        }
+        return rc == MAKERESULT(21, 4);
+    }
+
+    void raise_cpu_clock() {
+        // sys-clk and Horizon OC set the clocks themselves, and fighting them froze consoles (NFSU2's port).
+        if (service_running("sys:clk") || service_running("hoc:clk")) {
+            std::printf("[clock] sys-clk or Horizon OC is running: the CPU clock is left to it\n");
+            return;
+        }
+        if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) {
+            std::printf("[clock] no clkrst: the CPU clock is unchanged\n");
+            return;
+        }
+        if (R_FAILED(clkrstOpenSession(&cpu_clock_session, PcvModuleId_CpuBus, 3))) {
+            std::printf("[clock] no clkrst session for the CPU: the CPU clock is unchanged\n");
+            clkrstExit();
+            return;
+        }
+        clkrstGetClockRate(&cpu_clock_session, &cpu_clock_old);
+        const Result rc = cpu_clock_old < cpu_clock_wanted ? clkrstSetClockRate(&cpu_clock_session, cpu_clock_wanted) : 0;
+        u32 now = 0;
+        clkrstGetClockRate(&cpu_clock_session, &now);
+        cpu_clock_set = now;
+        std::printf("[clock] CPU %u -> %u MHz%s\n", cpu_clock_old / 1000000, cpu_clock_set / 1000000,
+            R_FAILED(rc) ? " (refused)" : "");
+    }
+
+    // HOME, docking and sleep put the system's clocks back: set ours again.
+    void keep_cpu_clock() {
+        u32 now = 0;
+        if (cpu_clock_set == 0 || R_FAILED(clkrstGetClockRate(&cpu_clock_session, &now)) || now >= cpu_clock_set) {
+            return;
+        }
+        clkrstSetClockRate(&cpu_clock_session, cpu_clock_set);
+        std::printf("[clock] CPU was put back to %u MHz: set to %u MHz again\n", now / 1000000, cpu_clock_set / 1000000);
+    }
+
+    void restore_cpu_clock() {
+        if (cpu_clock_set == 0 && cpu_clock_old == 0) {
+            return;
+        }
+        if (cpu_clock_set != 0 && cpu_clock_old != 0) {
+            clkrstSetClockRate(&cpu_clock_session, cpu_clock_old);
+        }
+        clkrstCloseSession(&cpu_clock_session);
+        clkrstExit();
+    }
+
     // Writing to the SD card on every line is very slow (a ported game took 33s to boot that way):
     // the log is buffered, and flushed twice a second. fsync commits it to the card: after a hang and a
     // hard reboot, a log that was only flushed ended in garbage. Every 2 s a line gives the time and the
@@ -41,6 +105,7 @@ namespace {
                 svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
                 std::printf("[nx] %llu s, %llu MB used\n", (unsigned long long)(armTicksToNs(armGetSystemTick() - start) / 1'000'000'000ULL),
                     (unsigned long long)(used >> 20));
+                keep_cpu_clock();
             }
             std::fflush(stdout);
             fsync(fileno(stdout));
@@ -84,6 +149,7 @@ extern "C" void userAppInit(void) {
         (unsigned long long)(used >> 20));
     // Don't let the console sleep while the game runs.
     appletSetAutoSleepDisabled(true);
+    raise_cpu_clock();
 }
 
 extern "C" void userAppExit(void) {
@@ -93,6 +159,7 @@ extern "C" void userAppExit(void) {
         threadWaitForExit(&log_flush_thread);
         threadClose(&log_flush_thread);
     }
+    restore_cpu_clock();
     std::fflush(stdout);
 }
 

@@ -415,3 +415,15 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
     codepoints. So the glyphs are not a known cause. It may be the same unreliable hang as the bar door.
   - Next run: the log thread runs at priority 0x20 (above the game's 0x29-0x2E), so a hang still gets lines. If the
     `[nx] N s` lines go on, the CPU runs and the GPU or the display is stuck. If they stop, the whole system is.
+
+### 2026-10-17: refresh rate Original by default, CPU at 1785 MHz
+
+- **Refresh rate:** the Switch default is now "Original" (`recompfrontend-switch.patch`, `ui_config_tab_graphics.cpp`),
+  so RT64 does no interpolation and no frame matching. A saved `graphics.json` still wins: on the user's console it
+  said `Manual`, so it was changed to `Original` over FTP (the old file is `graphics.json.before-rr`).
+- **CPU clock** (`host/switch/switch_nx.cpp`, the idea from antoxa2584x's NFSU2 port, own code): at start the CPU
+  goes to 1785 MHz through clkrst (the system gives games 1020 MHz). The log says `[clock] CPU 1020 -> 1785 MHz`.
+  The log thread sets it again every 2 s when HOME, docking or sleep put it back, and logs that. The old rate
+  comes back on exit. When sys-clk or Horizon OC runs (`sys:clk` / `hoc:clk` registered), the clock is left to
+  it: fighting them froze consoles in the NFSU2 port.
+- Not yet run on hardware.
