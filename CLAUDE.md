@@ -444,3 +444,18 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - Fix: the Switch default is Original (`recompfrontend-switch.patch`, `ui_config_tab_graphics.cpp`), and Auto is
   capped at 2x on the Switch (`rt64-switch.patch`). 2x outdoors over a longer run is not yet confirmed.
 - `switch` already has everything in upstream `sciaschi/CBFD-Recompiled` master (checked 2026-10-17).
+
+### 2026-10-17: upstream main merged; the hangover scene
+
+- **Merged upstream `main`** (41 commits ahead of `switch`; `master` was not): among them "RT64: reuse tile
+  copies at any resolution", widescreen fixes (Beach), the heap fix, Start Game Directly, netplay (behind
+  `CONKER_NETPLAY`). Three conflicts (`host/CMakeLists.txt`, `conker_config.cpp`, `main.cpp`): both sides kept.
+  All four Switch patches still apply on the new `recomp/*.patch`. The merged NRO builds (300fc86); not yet run.
+- **`switch/build.sh` bug:** `patch_tool` took a tool as done when its last (Switch) patch reversed, so after the
+  merge changed `recomp/*.patch` the tools kept the old PC patches (`ultramodern/timeline.hpp` not found). Now a
+  stamp in each tool's git folder holds the patches' SHA-1, and any change patches the tool again.
+- **The hangover scene (scene 0x18, the blur and white-out):** 7-8 presents/s with renderer CPU 50-54 ms and GPU
+  29-31 ms (resolution 2x), against 30 presents/s, CPU 2-10 ms and GPU 1-5 ms in the rest of the game. The
+  motion blur copies the frame (framebuffer copies), and both the GPU and RT64's CPU side grow. Next: the same place
+  at resolution Original, and with the merged tile-copy fix.
+- `[clock] CPU 1020 -> 1785 MHz` on hardware: the clock works.
