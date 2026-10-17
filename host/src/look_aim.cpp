@@ -254,7 +254,12 @@ void conker::look_aim::add_camera_options(recomp::config::Config& config) {
         "and down, instead of pressing the C-buttons, and the left stick moves Conker. The C-buttons' other controls "
         "stay: by default C-Up (first person) on the right stick's click and C-Down on RB. <recomp-color primary>Off</recomp-color> matches the "
         "original game. Only the normal camera: in R-Look, aiming and cutscenes, the right stick is the C-buttons as usual.",
+#if defined(__SWITCH__)
+        // On by default on the Switch: the user asked for the modern camera (right turns right).
+        toggle, Toggle::On);
+#else
         toggle, Toggle::Off);
+#endif
     config.add_number_option(options::camera_fov, "Camera: Field of View",
         "How wide the normal camera sees, as its vertical field of view (the same whatever the aspect ratio). "
         "<recomp-color primary>50\xC2\xB0</recomp-color> matches the original game (60.6\xC2\xB0 across at 4:3). More shows more "

@@ -1,6 +1,7 @@
 // Nintendo Switch (libnx) start-up: the log on the SD card, and a report when the game crashes.
 // Everything lives in conker::switch_data_directory (sdmc:/switch/cbfd/).
 
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <sys/stat.h>
@@ -9,6 +10,9 @@
 #include <switch.h>
 
 #include "../src/conker.hpp"
+
+// librecomp's: ultramodern::quit sets it.
+extern std::atomic_bool exited;
 
 extern "C" {
     // The program's start, from libnx's linker script: crash addresses are given relative to it,
@@ -122,8 +126,21 @@ namespace {
     // memory, so a hang shows when it happened.
     void log_flush_loop(void*) {
         const u64 start = armGetSystemTick();
+        unsigned quit_tick = 0;
         for (unsigned tick = 1; log_flush_running; tick++) {
             svcSleepThread(500'000'000LL);
+            // Quitting (ultramodern::quit sets `exited`) must end in userAppExit. If it hasn't in 5 s, the
+            // shutdown is stuck (a thread that won't join): end the process from here.
+            if (quit_tick == 0 && exited.load()) {
+                quit_tick = tick;
+                std::printf("[nx] quitting\n");
+            } else if (quit_tick != 0 && tick - quit_tick >= 10) {
+                std::printf("[nx] the shutdown is stuck after 5 s: ending the process\n");
+                restore_clocks();
+                std::fflush(stdout);
+                fsync(fileno(stdout));
+                svcExitProcess();
+            }
             if (tick % 4 == 0) {
                 u64 used = 0;
                 svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);

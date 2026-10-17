@@ -478,3 +478,26 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - **Auto resolution:** the user wants Auto (3x handheld, 5x docked) to work, so the 2x cap is gone. Original stays
   the default. To measure: Auto before (about 16 fps, CPU 1785 MHz, GPU at the handheld stock rate) and now with the GPU at 768 MHz.
 - Built (switch 300fc86 + these), on the console; not yet run.
+
+### 2026-10-17: Auto at 24 fps; the free camera; quitting still fails
+
+- **Auto (3x handheld) at the user's clocks** (`[clock] CPU 1020 -> 1785`, `GPU 307 -> 768`, `memory 1600 -> 1600`),
+  refresh rate Original, scene 0x29 (the throne room cutscene): 22-28 presents/s, present 36-46 ms, renderer CPU
+  29-35 ms, GPU 17-20 ms. Earlier scenes: 28-30 presents/s, renderer CPU 4-13 ms.
+  - "Renderer CPU" includes the GPU: `WorkloadQueue` records the frame, then `execute()` and `wait()` at once
+    (`rt64_workload_queue.cpp`). So a frame is about 13 ms of CPU recording, then 20 ms of GPU, one after the other,
+    and nothing overlaps: ~33 ms, plus the present queue's own pass to the screen. That is the 24.
+  - To reach the game's 30 at Auto: overlap the CPU recording of frame N+1 with the GPU of frame N (RT64 waits at
+    once, maybe because of framebuffer readbacks), or less GPU per frame. 60 at Auto is not in reach (the GPU alone is
+    17-20 ms a frame at 3x, and interpolation adds frames).
+  - Conker's blur (`conkerBlur`) already runs downsampled (`fixedResScale`).
+- **Free camera:** upstream's "Right Stick: Free Camera" (`look_aim.cpp`) is now On by default on the Switch, and on
+  in the console's `camera.json` (the old file is `camera.json.before-freecam`). It turns the way the mouse does (right
+  turns right), as in modern games, so "Camera: Invert Turning" stays None; X inverts left and right if wanted. With it
+  the right stick turns and tilts the camera; C-Up is on X and R3, C-Down on Y; C-Left and C-Right are the turning
+  it replaces.
+- **Quitting still shows an error** (the user). No new Atmosphère report after 17:52, and the log of 7731568 has no
+  `[nx] exit`: the process never got to `userAppExit`. `recomp::start` joins the game thread, the event threads, the
+  thread cleaner and the saving thread before it returns; one of them may never end. The log now says `[nx] quitting`
+  when `ultramodern::quit` sets `exited`, `[nx] recomp::start returned`, then `[nx] exit`; and if `userAppExit` hasn't
+  come 5 s after quitting, the log thread says so and ends the process (`svcExitProcess`). Not yet run.

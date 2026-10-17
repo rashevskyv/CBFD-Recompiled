@@ -634,6 +634,10 @@ int main(int argc, char** argv) {
     }
 
     recomp::start(cfg);
+#if defined(__SWITCH__)
+    // The quit's steps in the log (an error on quitting, 2026-10-17): this, then switch_nx.cpp's "[nx] exit".
+    std::printf("[nx] recomp::start returned\n");
+#endif
 
 #if defined(CONKER_NETPLAY)
     conker::harness::finish();
