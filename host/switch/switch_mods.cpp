@@ -5,6 +5,7 @@
 // settings on the General tab instead of mods.
 
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <vector>
 
@@ -124,7 +125,9 @@ static int32_t skip_cutscene(uint8_t* rdram, int32_t i, SkipCutscenes mode) {
             MEM_B(0, addr(0x8008FD84)) = 0;
             return 1;
         }
-        if (MEM_BU(0, addr(0x800C35E8)) != 5) {
+        // The game (and the mod) skips only cutscene 5 here. All also lets L skip the others, such as the
+        // one New Game starts with (the user's report: it could not be skipped).
+        if (MEM_BU(0, addr(0x800C35E8)) != 5 && mode != SkipCutscenes::All) {
             return 0;
         }
     }
@@ -149,5 +152,23 @@ extern "C" void func_1501E05C(uint8_t* rdram, recomp_context* ctx) {
         func_1501E05C_orig(rdram, ctx);
         return;
     }
-    ctx->r2 = skip_cutscene(rdram, (int32_t)ctx->r4, mode);
+    const int32_t i = (int32_t)ctx->r4;
+    ctx->r2 = skip_cutscene(rdram, i, mode);
+
+    // The log: each cutscene once, and what L or Start did, to find a cutscene that won't skip.
+    static int32_t logged_scene = -1;
+    static int32_t logged_id = -1;
+    const int32_t scene = MEM_W(0, addr(0x800BE9F0));
+    const int32_t id = MEM_BU(i, addr(0x800C35E8));
+    if (scene != logged_scene || id != logged_id) {
+        logged_scene = scene;
+        logged_id = id;
+        std::printf("[skip] cutscene %d in scene 0x%X: length %d, unskippable %u\n", id, scene,
+            MEM_W(i * 4, addr(0x800C3640)), MEM_BU(0, addr(0x800C3C9C)));
+    }
+    const uint16_t pressed = MEM_HU(0, addr(0x800BE710));
+    if (pressed & (button_l | button_start)) {
+        std::printf("[skip] %s at frame %d of cutscene %d in scene 0x%X: %s\n", (pressed & button_l) ? "L" : "Start",
+            MEM_W(i * 4, addr(0x800C35B0)), id, scene, ctx->r2 ? "skipped" : "not skipped");
+    }
 }

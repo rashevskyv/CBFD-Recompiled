@@ -426,4 +426,12 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   The log thread sets it again every 2 s when HOME, docking or sleep put it back, and logs that. The old rate
   comes back on exit. When sys-clk or Horizon OC runs (`sys:clk` / `hoc:clk` registered), the clock is left to
   it: fighting them froze consoles in the NFSU2 port.
-- Not yet run on hardware.
+- **Result on hardware (6eaaff0): a stable 30 fps** (the user), outdoors and in the bar. Settings: refresh rate
+  Original, resolution Original, MSAA off, CPU 1785 MHz asked (the `[clock]` line is not read yet: FTP was off).
+  So RT64's frame matching was the cost, and the game itself runs at its own 30. The launcher did not freeze.
+- **The first cutscene of a New Game could not be skipped.** In scene 0x1D (outside the bar, where the game
+  starts) the game, and the mod, skip only cutscene 5. Now, with Skip Cutscenes on All, L skips any cutscene in
+  0x1D (`switch_mods.cpp`). For each cutscene the log says `[skip] cutscene N in scene 0xS: length L, unskippable U`,
+  and for each press of L or Start `[skip] L at frame F of cutscene N in scene 0xS: skipped` (or `not skipped`).
+  That finds any other cutscene that won't skip. Not yet run on hardware. To check: L in the main menu, in case a
+  cutscene plays behind it.
