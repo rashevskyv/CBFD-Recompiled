@@ -1,5 +1,5 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 237a00d..856b6be 100644
+index 6467e67..c1d7c85 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -58,7 +58,8 @@ elseif (APPLE)
@@ -318,18 +318,3 @@ index 2ef2ef5..cd096d0 100644
              }
          }
      }
-diff --git a/src/hle/rt64_workload_queue.cpp b/src/hle/rt64_workload_queue.cpp
-index e6c0eae..993b4fc 100644
---- a/src/hle/rt64_workload_queue.cpp
-+++ b/src/hle/rt64_workload_queue.cpp
-@@ -191,6 +191,10 @@ namespace RT64 {
-         case UserConfiguration::Resolution::WindowIntegerScale:
-             if (ext.sharedResources->swapChainHeight > 0) {
-                 resolutionMultiplier = std::max(float((ext.sharedResources->swapChainHeight + referenceHeight - 1) / referenceHeight), 1.0f);
-+#if defined(__SWITCH__)
-+                // 3x handheld and 5x docked gave about 16 fps: the GPU can't. 2x runs at 30.
-+                resolutionMultiplier = std::min(resolutionMultiplier, 2.0f);
-+#endif
-             }
-             else {
-                 resolutionMultiplier = 1.0f;

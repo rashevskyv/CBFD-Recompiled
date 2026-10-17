@@ -459,3 +459,22 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   motion blur copies the frame (framebuffer copies), and both the GPU and RT64's CPU side grow. Next: the same place
   at resolution Original, and with the merged tile-copy fix.
 - `[clock] CPU 1020 -> 1785 MHz` on hardware: the clock works.
+
+### 2026-10-17: crash after quitting; A/B by Nintendo labels; GPU and memory clocks; Auto uncapped
+
+- **Crash after quitting** (Atmosphère report `01792248723_05c838df22834000`, 17:52:03, Result 0x2A8, Instruction
+  Abort at PC `0x6be96ce2f4`; the build was 6eaaff0). The module list names only `hbl`, the crashed thread's stack is
+  2 MB (ours) and every return address is in the same range. The game's log of that run ends at 252 s (17:51:58)
+  with no `[nx] crash` line: our handler was unmapped too. Cause: when the game quits, main returns to hbl, which
+  unmaps the NRO, while the game's threads (the runtime's detached timer, RT64's, SDL's audio) still run; the first
+  to wake ran unmapped code. Fix (`switch_nx.cpp` `userAppExit`): log `[nx] exit`, `fsync`, then `svcExitProcess()`.
+  Quitting now goes back to the HOME menu, not to kefir-hub.
+- **A/B:** the user confirmed the Nintendo-label layout. On the Switch the default bindings
+  (`recompfrontend-switch.patch`, `input_mapping.cpp`): A (right) = N64 A and menu accept, B (bottom) = N64 B and
+  menu back, R = R and ZR, Z = ZL, C-buttons on the right stick, C-up also X, C-down also Y. Saved bindings win over
+  defaults, so the console's `controls.json` was moved to `controls.json.before-ab`.
+- **Clocks:** as in the Xbox ports, GPU 768 MHz and memory 1600 MHz join the CPU's 1785 MHz (same clkrst code, same
+  sys-clk / Horizon OC guard, never lowers a rate, the old rates back on exit). The log has a `[clock]` line for each.
+- **Auto resolution:** the user wants Auto (3x handheld, 5x docked) to work, so the 2x cap is gone. Original stays
+  the default. To measure: Auto before (about 16 fps at 1020 MHz CPU, GPU stock) and now with the GPU at 768 MHz.
+- Built (switch 300fc86 + these), on the console; not yet run.

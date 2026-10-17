@@ -28,12 +28,25 @@ namespace {
     Thread log_flush_thread;
     volatile bool log_flush_running = false;
 
-    // The CPU at 1785 MHz, the highest rate, which the system itself uses while loading: the game and RT64's
-    // CPU side limit the frame rate, and the system gives games 1020 MHz. The old rate comes back on exit.
-    constexpr u32 cpu_clock_wanted = 1785000000;
-    ClkrstSession cpu_clock_session;
-    u32 cpu_clock_old = 0;
-    volatile u32 cpu_clock_set = 0;  // read by the log thread, which starts first
+    // The CPU at 1785 MHz (the highest, which the system itself uses while loading; games get 1020), the GPU
+    // at 768 MHz (docked's rate; handheld gives 384-460) and memory at 1600 MHz, as antoxa2584x's Xbox ports
+    // do: the game and RT64's CPU side, and at high resolutions the GPU, limit the frame rate. The old rates
+    // come back on exit.
+    struct Clock {
+        const char* name;
+        PcvModuleId module;
+        u32 wanted;
+        ClkrstSession session;
+        bool open;
+        u32 old;
+        volatile u32 set;  // read by the log thread, which starts first
+    };
+    Clock clocks[] = {
+        { "CPU", PcvModuleId_CpuBus, 1785000000 },
+        { "GPU", PcvModuleId_GPU, 768000000 },
+        { "memory", PcvModuleId_EMC, 1600000000 },
+    };
+    bool clkrst_up = false;
 
     // Is another process serving this name? (sys-clk's own check: registering it fails as already registered.)
     bool service_running(const char* name) {
@@ -47,48 +60,59 @@ namespace {
         return rc == MAKERESULT(21, 4);
     }
 
-    void raise_cpu_clock() {
+    void raise_clocks() {
         // sys-clk and Horizon OC set the clocks themselves, and fighting them froze consoles (NFSU2's port).
         if (service_running("sys:clk") || service_running("hoc:clk")) {
-            std::printf("[clock] sys-clk or Horizon OC is running: the CPU clock is left to it\n");
+            std::printf("[clock] sys-clk or Horizon OC is running: the clocks are left to it\n");
             return;
         }
         if (!hosversionAtLeast(8, 0, 0) || R_FAILED(clkrstInitialize())) {
-            std::printf("[clock] no clkrst: the CPU clock is unchanged\n");
+            std::printf("[clock] no clkrst: the clocks are unchanged\n");
             return;
         }
-        if (R_FAILED(clkrstOpenSession(&cpu_clock_session, PcvModuleId_CpuBus, 3))) {
-            std::printf("[clock] no clkrst session for the CPU: the CPU clock is unchanged\n");
-            clkrstExit();
-            return;
+        clkrst_up = true;
+        for (Clock& clock : clocks) {
+            if (R_FAILED(clkrstOpenSession(&clock.session, clock.module, 3))) {
+                std::printf("[clock] no clkrst session for the %s: unchanged\n", clock.name);
+                continue;
+            }
+            clock.open = true;
+            clkrstGetClockRate(&clock.session, &clock.old);
+            // Never lower a rate (docked memory, or someone else's overclock).
+            const Result rc = clock.old < clock.wanted ? clkrstSetClockRate(&clock.session, clock.wanted) : 0;
+            u32 now = 0;
+            clkrstGetClockRate(&clock.session, &now);
+            clock.set = now;
+            std::printf("[clock] %s %u -> %u MHz%s\n", clock.name, clock.old / 1000000, now / 1000000,
+                R_FAILED(rc) ? " (refused)" : "");
         }
-        clkrstGetClockRate(&cpu_clock_session, &cpu_clock_old);
-        const Result rc = cpu_clock_old < cpu_clock_wanted ? clkrstSetClockRate(&cpu_clock_session, cpu_clock_wanted) : 0;
-        u32 now = 0;
-        clkrstGetClockRate(&cpu_clock_session, &now);
-        cpu_clock_set = now;
-        std::printf("[clock] CPU %u -> %u MHz%s\n", cpu_clock_old / 1000000, cpu_clock_set / 1000000,
-            R_FAILED(rc) ? " (refused)" : "");
     }
 
     // HOME, docking and sleep put the system's clocks back: set ours again.
-    void keep_cpu_clock() {
-        u32 now = 0;
-        if (cpu_clock_set == 0 || R_FAILED(clkrstGetClockRate(&cpu_clock_session, &now)) || now >= cpu_clock_set) {
-            return;
+    void keep_clocks() {
+        for (Clock& clock : clocks) {
+            u32 now = 0;
+            if (clock.set == 0 || R_FAILED(clkrstGetClockRate(&clock.session, &now)) || now >= clock.set) {
+                continue;
+            }
+            clkrstSetClockRate(&clock.session, clock.set);
+            std::printf("[clock] %s was put back to %u MHz: set to %u MHz again\n", clock.name, now / 1000000,
+                clock.set / 1000000);
         }
-        clkrstSetClockRate(&cpu_clock_session, cpu_clock_set);
-        std::printf("[clock] CPU was put back to %u MHz: set to %u MHz again\n", now / 1000000, cpu_clock_set / 1000000);
     }
 
-    void restore_cpu_clock() {
-        if (cpu_clock_set == 0 && cpu_clock_old == 0) {
+    void restore_clocks() {
+        if (!clkrst_up) {
             return;
         }
-        if (cpu_clock_set != 0 && cpu_clock_old != 0) {
-            clkrstSetClockRate(&cpu_clock_session, cpu_clock_old);
+        for (Clock& clock : clocks) {
+            if (clock.open) {
+                if (clock.old != 0 && clock.set != clock.old) {
+                    clkrstSetClockRate(&clock.session, clock.old);
+                }
+                clkrstCloseSession(&clock.session);
+            }
         }
-        clkrstCloseSession(&cpu_clock_session);
         clkrstExit();
     }
 
@@ -105,7 +129,7 @@ namespace {
                 svcGetInfo(&used, InfoType_UsedMemorySize, CUR_PROCESS_HANDLE, 0);
                 std::printf("[nx] %llu s, %llu MB used\n", (unsigned long long)(armTicksToNs(armGetSystemTick() - start) / 1'000'000'000ULL),
                     (unsigned long long)(used >> 20));
-                keep_cpu_clock();
+                keep_clocks();
             }
             std::fflush(stdout);
             fsync(fileno(stdout));
@@ -149,7 +173,7 @@ extern "C" void userAppInit(void) {
         (unsigned long long)(used >> 20));
     // Don't let the console sleep while the game runs.
     appletSetAutoSleepDisabled(true);
-    raise_cpu_clock();
+    raise_clocks();
 }
 
 extern "C" void userAppExit(void) {
@@ -159,8 +183,15 @@ extern "C" void userAppExit(void) {
         threadWaitForExit(&log_flush_thread);
         threadClose(&log_flush_thread);
     }
-    restore_cpu_clock();
+    restore_clocks();
+    std::printf("[nx] exit\n");
     std::fflush(stdout);
+    fsync(fileno(stdout));
+    // The game's threads (the runtime's detached timer, RT64's, SDL's audio) outlive main. Returning would hand
+    // the process back to hbl, which unmaps the NRO, and the first of them to wake ran unmapped code: an
+    // Instruction Abort, Atmosphère report 01792248723, 2026-10-17. End the whole process instead: the
+    // console goes back to the HOME menu.
+    svcExitProcess();
 }
 
 // libnx gives a thread made without a stack size (every std::thread: the game's threads, RT64's,

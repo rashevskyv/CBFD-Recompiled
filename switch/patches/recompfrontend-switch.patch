@@ -11,11 +11,62 @@ index 899372b..734ae02 100644
      target_include_directories(recompinput PRIVATE ${SDL2_INCLUDE_DIRS})
  endif()
  
+diff --git a/recompinput/src/input_mapping.cpp b/recompinput/src/input_mapping.cpp
+index 2f551d7..3fb5271 100644
+--- a/recompinput/src/input_mapping.cpp
++++ b/recompinput/src/input_mapping.cpp
+@@ -39,6 +39,38 @@ namespace recompinput {
+         { GameInput::TOGGLE_TEXTURE_PACK, { InputField::keyboard(SDL_SCANCODE_F8) } }
+     };
+ 
++#if defined(__SWITCH__)
++    // The Switch's own layout, by its labels (switch-sdl2 maps by position: SOUTH is the Switch's B, EAST its A):
++    // A accepts and jumps, B goes back and attacks, as in Nintendo's own N64 games on the Switch. C-buttons on
++    // the right stick, C-up also X and C-down also Y, R on R and ZR, Z on ZL.
++    default_game_input_device_mapping default_n64_mappings_controller = {
++        { GameInput::A,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_EAST) } },
++        { GameInput::B,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_SOUTH) } },
++        { GameInput::L,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSHOULDER) } },
++        { GameInput::R,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER), InputField::controller_analog( SDL_CONTROLLER_AXIS_TRIGGERRIGHT, true) } },
++        { GameInput::Z,              { InputField::controller_analog( SDL_CONTROLLER_AXIS_TRIGGERLEFT, true) } },
++        { GameInput::START,          { InputField::controller_digital(SDL_CONTROLLER_BUTTON_START) } },
++        { GameInput::C_LEFT,         { InputField::controller_analog( SDL_CONTROLLER_AXIS_RIGHTX, false) } },
++        { GameInput::C_RIGHT,        { InputField::controller_analog( SDL_CONTROLLER_AXIS_RIGHTX, true) } },
++        { GameInput::C_UP,           { InputField::controller_analog( SDL_CONTROLLER_AXIS_RIGHTY, false), InputField::controller_digital(SDL_CONTROLLER_BUTTON_NORTH) } },
++        { GameInput::C_DOWN,         { InputField::controller_analog( SDL_CONTROLLER_AXIS_RIGHTY, true),  InputField::controller_digital(SDL_CONTROLLER_BUTTON_WEST) } },
++        { GameInput::DPAD_LEFT,      { InputField::controller_digital(SDL_CONTROLLER_BUTTON_DPAD_LEFT) } },
++        { GameInput::DPAD_RIGHT,     { InputField::controller_digital(SDL_CONTROLLER_BUTTON_DPAD_RIGHT) } },
++        { GameInput::DPAD_UP,        { InputField::controller_digital(SDL_CONTROLLER_BUTTON_DPAD_UP) } },
++        { GameInput::DPAD_DOWN,      { InputField::controller_digital(SDL_CONTROLLER_BUTTON_DPAD_DOWN) } },
++        { GameInput::X_AXIS_NEG,     { InputField::controller_analog( SDL_CONTROLLER_AXIS_LEFTX, false) } },
++        { GameInput::X_AXIS_POS,     { InputField::controller_analog( SDL_CONTROLLER_AXIS_LEFTX, true) } },
++        { GameInput::Y_AXIS_POS,     { InputField::controller_analog( SDL_CONTROLLER_AXIS_LEFTY, false) } },
++        { GameInput::Y_AXIS_NEG,     { InputField::controller_analog( SDL_CONTROLLER_AXIS_LEFTY, true) } },
++
++        { GameInput::TOGGLE_MENU,    { InputField::controller_digital(SDL_CONTROLLER_BUTTON_BACK) } },
++        { GameInput::ACCEPT_MENU,    { InputField::controller_digital(SDL_CONTROLLER_BUTTON_EAST) } },
++        { GameInput::BACK_MENU,      { InputField::controller_digital(SDL_CONTROLLER_BUTTON_SOUTH) } },
++        { GameInput::APPLY_MENU,     { InputField::controller_digital(SDL_CONTROLLER_BUTTON_NORTH), InputField::controller_digital(SDL_CONTROLLER_BUTTON_START) } },
++        { GameInput::TAB_LEFT_MENU,  { InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSHOULDER) } },
++        { GameInput::TAB_RIGHT_MENU, { InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) } },
++    };
++#else
+     default_game_input_device_mapping default_n64_mappings_controller = {
+         { GameInput::A,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_SOUTH) } },
+         { GameInput::B,              { InputField::controller_digital(SDL_CONTROLLER_BUTTON_WEST) } },
+@@ -66,6 +98,7 @@ namespace recompinput {
+         { GameInput::TAB_LEFT_MENU,  { InputField::controller_digital(SDL_CONTROLLER_BUTTON_LEFTSHOULDER) } },
+         { GameInput::TAB_RIGHT_MENU, { InputField::controller_digital(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) } },
+     };
++#endif
+ 
+     // Flag to prevent the base game from changing default mappings after they have been used.
+     static bool default_mappings_used = false;
 diff --git a/recompinput/src/input_types.cpp b/recompinput/src/input_types.cpp
-index 7db1735..836edfe 100644
+index 833b9a3..11e2ac3 100644
 --- a/recompinput/src/input_types.cpp
 +++ b/recompinput/src/input_types.cpp
-@@ -86,6 +86,30 @@ const std::string& get_game_input_enum_name(GameInput input) {
+@@ -102,6 +102,30 @@ const std::string& get_game_input_enum_name(GameInput input) {
  }
  
  static std::string controller_button_to_string(SDL_GameControllerButton button) {
@@ -46,7 +97,7 @@ index 7db1735..836edfe 100644
      switch (button) {
      case SDL_GameControllerButton::SDL_CONTROLLER_BUTTON_A:
          return PF_GAMEPAD_A;
-@@ -239,10 +263,18 @@ static std::string controller_axis_to_string(int axis) {
+@@ -255,10 +279,18 @@ static std::string controller_axis_to_string(int axis) {
          return positive ? PF_ANALOG_R_RIGHT : PF_ANALOG_R_LEFT;
      case SDL_GameControllerAxis::SDL_CONTROLLER_AXIS_RIGHTY:
          return positive ? PF_ANALOG_R_DOWN : PF_ANALOG_R_UP;
