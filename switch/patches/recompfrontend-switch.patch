@@ -135,10 +135,23 @@ index 35a9952..5c7c173 100644
      static_assert(false, "Not implemented for this platform.");
  #endif
 diff --git a/recompui/src/config/ui_config_tab_graphics.cpp b/recompui/src/config/ui_config_tab_graphics.cpp
-index 4fdf81f..6cb49e9 100644
+index 4fdf81f..9d1e8d4 100644
 --- a/recompui/src/config/ui_config_tab_graphics.cpp
 +++ b/recompui/src/config/ui_config_tab_graphics.cpp
-@@ -304,7 +304,12 @@ namespace recompui {
+@@ -237,7 +237,12 @@ namespace recompui {
+                 "Resolution",
+                 "Sets the output resolution of the game. <recomp-color primary>Original</recomp-color> matches the game's original 240p resolution. <recomp-color primary>Original 2x</recomp-color> will render at 480p. <recomp-color primary>Auto</recomp-color> will scale based on the game window's resolution.",
+                 resolution_options,
++#if defined(__SWITCH__)
++                // Auto is 3x handheld and 5x docked: about 16 fps on the Switch. Original and 2x run at 30.
++                ultramodern::renderer::Resolution::Original
++#else
+                 ultramodern::renderer::Resolution::Auto
++#endif
+             );
+             {
+                 config.add_option_change_callback(
+@@ -304,7 +309,12 @@ namespace recompui {
                  "Framerate",
                  get_framerate_text(60),
                  refresh_rate_options,

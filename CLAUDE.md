@@ -435,3 +435,12 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   and for each press of L or Start `[skip] L at frame F of cutscene N in scene 0xS: skipped` (or `not skipped`).
   That finds any other cutscene that won't skip. Not yet run on hardware. To check: L in the main menu, in case a
   cutscene plays behind it.
+
+### 2026-10-17: resolution Auto is too slow; Original by default
+
+- The user, first cutscene: resolution **Auto about 16 fps**, **Original and 2x about 30 fps**.
+- Why: Auto is RT64's `WindowIntegerScale` (`rt64_workload_queue.cpp`): `ceil(swap chain height / 240)`, so **3x
+  handheld (720p) and 5x docked (1080p)**, 9 and 25 times the pixels of Original. The GPU can't keep up.
+- Fix: the Switch default is Original (`recompfrontend-switch.patch`, `ui_config_tab_graphics.cpp`), and Auto is
+  capped at 2x on the Switch (`rt64-switch.patch`). 2x outdoors over a longer run is not yet confirmed.
+- `switch` already has everything in upstream `sciaschi/CBFD-Recompiled` master (checked 2026-10-17).
