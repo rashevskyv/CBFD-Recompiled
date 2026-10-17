@@ -476,5 +476,5 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
 - **Clocks:** as in the Xbox ports, GPU 768 MHz and memory 1600 MHz join the CPU's 1785 MHz (same clkrst code, same
   sys-clk / Horizon OC guard, never lowers a rate, the old rates back on exit). The log has a `[clock]` line for each.
 - **Auto resolution:** the user wants Auto (3x handheld, 5x docked) to work, so the 2x cap is gone. Original stays
-  the default. To measure: Auto before (about 16 fps at 1020 MHz CPU, GPU stock) and now with the GPU at 768 MHz.
+  the default. To measure: Auto before (about 16 fps, CPU 1785 MHz, GPU at the handheld stock rate) and now with the GPU at 768 MHz.
 - Built (switch 300fc86 + these), on the console; not yet run.
