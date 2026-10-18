@@ -15,6 +15,9 @@
 extern std::atomic_bool exited;
 
 extern "C" {
+    // libnx's (init.c): closes the services, as its own exit does before the process ends.
+    void __appExit(void);
+
     // The program's start, from libnx's linker script: crash addresses are given relative to it,
     // for addr2line on the ELF.
     extern char __start__[];
@@ -139,6 +142,7 @@ namespace {
                 restore_clocks();
                 std::fflush(stdout);
                 fsync(fileno(stdout));
+                __appExit();
                 svcExitProcess();
             }
             if (tick % 4 == 0) {
@@ -176,7 +180,8 @@ namespace {
 
 extern "C" void userAppInit(void) {
     open_log();
-    std::printf("[nx] Conker's Bad Fur Day: Recompiled, Switch build\n");
+    // The build's time tells which NRO ran (switch_nx.cpp is rebuilt with every change to it).
+    std::printf("[nx] Conker's Bad Fur Day: Recompiled, Switch build of " __DATE__ " " __TIME__ " UTC\n");
     AppletType type = appletGetAppletType();
     if (type != AppletType_Application && type != AppletType_SystemApplication) {
         // An applet (the album) only has ~400MB, not enough for the game.
@@ -208,12 +213,18 @@ void conker::switch_exit() {
     std::printf("[nx] exit\n");
     std::fflush(stdout);
     fsync(fileno(stdout));
+    // libnx's own exit closes the services first (applet among them, which tells the system the application
+    // ended), then ends the process; hbloader ends this way when hbmenu quits. svcExitProcess alone made the
+    // system say "the software was closed because an error occurred" (the user, 2026-10-17).
+    __appExit();
     svcExitProcess();
 }
 
 extern "C" void userAppExit(void) {
-    // Only when the program ends another way (std::exit on an error): stdio is closed by now.
+    // Only when the program ends another way (std::exit on an error): stdio is closed by now. Not back to hbl
+    // (the threads), but out as conker::switch_exit does.
     restore_clocks();
+    __appExit();
     svcExitProcess();
 }
 

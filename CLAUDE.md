@@ -511,3 +511,9 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   worked). The log of that run has no `[skip]` press line, and the skip only acts on L (or Start in the opening),
   so it is not a known cause. The log now also writes every skip with no button pressed (scene 0x1D's own flag,
   `0x8008FD84`), with the buttons pressed that frame.
+- **The quit's error message, "the software was closed because an error occurred"** (no Atmosphère report),
+  remained with 7731568 and 034e080. Probable cause: `svcExitProcess` alone ends the application without closing
+  its services, so the system (am) takes it as a crash. libnx's own exit runs `__appExit()` (the services, applet
+  among them) and then ends the process; hbloader ends that way when hbmenu quits. Now `conker::switch_exit`,
+  `userAppExit` and the 5 s watchdog all do `__appExit(); svcExitProcess();`. The log's first line has the build's
+  time, to tell which NRO ran. Built and on the console (SHA-1 49ffffae); not yet run.
