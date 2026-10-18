@@ -501,3 +501,13 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   thread cleaner and the saving thread before it returns; one of them may never end. The log now says `[nx] quitting`
   when `ultramodern::quit` sets `exited`, `[nx] recomp::start returned`, then `[nx] exit`; and if `userAppExit` hasn't
   come 5 s after quitting, the log thread says so and ends the process (`svcExitProcess`). Not yet run.
+- **The quit, found in the log of 034e080:** `[nx] quitting`, `[nx] recomp::start returned`, then nothing. main
+  returned and `exit()` ran the static destructors while the game's threads still ran, and newlib closes stdio
+  before `userAppExit`, so that function's `[nx] exit` could never reach the log. Now `conker::switch_exit()`
+  (`switch_nx.cpp`) runs right after `recomp::start` returns (the saves are written by then): it stops the log
+  thread, puts the clocks back, logs `[nx] exit`, and ends the process. `userAppExit` only ends the process now (for
+  a `std::exit` on an error). Not yet run.
+- **A context action's first B did nothing** (the user, the first B prompt of the game; the scarecrow's one
+  worked). The log of that run has no `[skip]` press line, and the skip only acts on L (or Start in the opening),
+  so it is not a known cause. The log now also writes every skip with no button pressed (scene 0x1D's own flag,
+  `0x8008FD84`), with the buttons pressed that frame.

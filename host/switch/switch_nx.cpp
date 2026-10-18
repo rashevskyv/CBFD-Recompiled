@@ -193,21 +193,27 @@ extern "C" void userAppInit(void) {
     raise_clocks();
 }
 
-extern "C" void userAppExit(void) {
+// The game's threads (the runtime's detached timer, RT64's, SDL's audio) outlive main. Returning would hand the
+// process back to hbl, which unmaps the NRO, and the first of them to wake ran unmapped code: an Instruction Abort,
+// Atmosphère report 01792248723, 2026-10-17. Running exit() first is no better: the static destructors run while
+// those threads still use what they free, and stdio is closed before userAppExit (the log lost its last lines).
+// So main calls this right after recomp::start (the saves are written by then): the whole process ends, and the
+// console goes back to the HOME menu.
+void conker::switch_exit() {
+    log_flush_running = false;
+    threadWaitForExit(&log_flush_thread);
+    threadClose(&log_flush_thread);
     appletSetAutoSleepDisabled(false);
-    if (log_flush_running) {
-        log_flush_running = false;
-        threadWaitForExit(&log_flush_thread);
-        threadClose(&log_flush_thread);
-    }
     restore_clocks();
     std::printf("[nx] exit\n");
     std::fflush(stdout);
     fsync(fileno(stdout));
-    // The game's threads (the runtime's detached timer, RT64's, SDL's audio) outlive main. Returning would hand
-    // the process back to hbl, which unmaps the NRO, and the first of them to wake ran unmapped code: an
-    // Instruction Abort, Atmosphère report 01792248723, 2026-10-17. End the whole process instead: the
-    // console goes back to the HOME menu.
+    svcExitProcess();
+}
+
+extern "C" void userAppExit(void) {
+    // Only when the program ends another way (std::exit on an error): stdio is closed by now.
+    restore_clocks();
     svcExitProcess();
 }
 

@@ -167,8 +167,10 @@ extern "C" void func_1501E05C(uint8_t* rdram, recomp_context* ctx) {
             MEM_W(i * 4, addr(0x800C3640)), MEM_BU(0, addr(0x800C3C9C)));
     }
     const uint16_t pressed = MEM_HU(0, addr(0x800BE710));
-    if (pressed & (button_l | button_start)) {
-        std::printf("[skip] %s at frame %d of cutscene %d in scene 0x%X: %s\n", (pressed & button_l) ? "L" : "Start",
+    // Every skip too, with no button (scene 0x1D's own flag): a context action's first B was lost (the user).
+    if (ctx->r2 || (pressed & (button_l | button_start))) {
+        const char* by = (pressed & button_l) ? "L" : (pressed & button_start) ? "Start" : "no button";
+        std::printf("[skip] %s (buttons 0x%04X) at frame %d of cutscene %d in scene 0x%X: %s\n", by, pressed,
             MEM_W(i * 4, addr(0x800C35B0)), id, scene, ctx->r2 ? "skipped" : "not skipped");
     }
 }

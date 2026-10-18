@@ -24,6 +24,8 @@ namespace conker {
 #if defined(__SWITCH__)
     // switch/switch_nx.cpp: the folder on the SD card with the NRO's assets, the ROM, saves and the log.
     inline constexpr const char* switch_data_directory = "sdmc:/switch/cbfd";
+    // Ends the process once the game has stopped (switch_nx.cpp): never returns.
+    [[noreturn]] void switch_exit();
 #endif
 
     // std::filesystem::copy_file, overwriting. On the Switch it fails on the SD card (it sets the copy's
