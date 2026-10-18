@@ -517,3 +517,10 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   among them) and then ends the process; hbloader ends that way when hbmenu quits. Now `conker::switch_exit`,
   `userAppExit` and the 5 s watchdog all do `__appExit(); svcExitProcess();`. The log's first line has the build's
   time, to tell which NRO ran. Built and on the console (SHA-1 49ffffae); not yet run.
+- **Correction (the Xbox session's tip, checked in `libnx.a`):** libnx's `__appExit` calls `userAppExit` first
+  (`init.o`: `bl userAppExit`, then `fsdevUnmountAll`, `fsExit`, `timeExit`, `hidExit`, `appletExit`, `smExit`). So
+  47225f5's `userAppExit` → `__appExit` → `userAppExit` … recursed without end at quit. And `__nx_exit` jumps to
+  `envGetExitFuncPtr()` unconditionally (`br x1`), so that pointer can't be NULL. Now: `userAppInit` sets the exit
+  function to our `end_process` (`svcExitProcess`); `userAppExit` only puts the clocks back; `conker::switch_exit`
+  and the watchdog call `__libnx_exit(0)`, libnx's exit without `exit()`'s destructors: services closed once, then
+  the process ends, never back to hbl. On the console (SHA-1 a696e580); not yet run.

@@ -15,8 +15,10 @@
 extern std::atomic_bool exited;
 
 extern "C" {
-    // libnx's (init.c): closes the services, as its own exit does before the process ends.
-    void __appExit(void);
+    // libnx's own exit (init.c): __appExit (which calls userAppExit first, then closes the services: applet,
+    // hid, fs...), then the loader's return function from envGetExitFuncPtr. No static destructors: those are
+    // exit()'s, before it.
+    [[noreturn]] void __libnx_exit(int rc);
 
     // The program's start, from libnx's linker script: crash addresses are given relative to it,
     // for addr2line on the ELF.
@@ -121,6 +123,14 @@ namespace {
             }
         }
         clkrstExit();
+        clkrst_up = false;
+    }
+
+    // libnx's exit ends here instead of returning to hbl (envSetExitFuncPtr in userAppInit), with the services
+    // closed. Returning to hbl unmapped the NRO while the game's threads still ran, and the first of them to wake
+    // ran unmapped code: an Instruction Abort, Atmosphère report 01792248723, 2026-10-17.
+    [[noreturn]] void end_process(int) {
+        svcExitProcess();
     }
 
     // Writing to the SD card on every line is very slow (a ported game took 33s to boot that way):
@@ -142,8 +152,7 @@ namespace {
                 restore_clocks();
                 std::fflush(stdout);
                 fsync(fileno(stdout));
-                __appExit();
-                svcExitProcess();
+                __libnx_exit(0);
             }
             if (tick % 4 == 0) {
                 u64 used = 0;
@@ -196,36 +205,29 @@ extern "C" void userAppInit(void) {
     // Don't let the console sleep while the game runs.
     appletSetAutoSleepDisabled(true);
     raise_clocks();
+    envSetExitFuncPtr(end_process);
 }
 
-// The game's threads (the runtime's detached timer, RT64's, SDL's audio) outlive main. Returning would hand the
-// process back to hbl, which unmaps the NRO, and the first of them to wake ran unmapped code: an Instruction Abort,
-// Atmosphère report 01792248723, 2026-10-17. Running exit() first is no better: the static destructors run while
-// those threads still use what they free, and stdio is closed before userAppExit (the log lost its last lines).
-// So main calls this right after recomp::start (the saves are written by then): the whole process ends, and the
-// console goes back to the HOME menu.
+// main calls this right after recomp::start (the saves are written by then). Not exit(): its static destructors
+// run while the game's threads (the runtime's detached timer, RT64's, SDL's audio) still use what they free, and
+// it closes stdio first (the log lost its last lines). libnx's own exit closes the services (applet among them,
+// which tells the system the application ended: svcExitProcess alone made it say "the software was closed because
+// an error occurred", 2026-10-17), then end_process ends the process: the console goes back to the HOME menu.
 void conker::switch_exit() {
     log_flush_running = false;
     threadWaitForExit(&log_flush_thread);
     threadClose(&log_flush_thread);
-    appletSetAutoSleepDisabled(false);
     restore_clocks();
     std::printf("[nx] exit\n");
     std::fflush(stdout);
     fsync(fileno(stdout));
-    // libnx's own exit closes the services first (applet among them, which tells the system the application
-    // ended), then ends the process; hbloader ends this way when hbmenu quits. svcExitProcess alone made the
-    // system say "the software was closed because an error occurred" (the user, 2026-10-17).
-    __appExit();
-    svcExitProcess();
+    __libnx_exit(0);
 }
 
+// From libnx's __appExit, before it closes the services: on every way out (also std::exit on an error).
 extern "C" void userAppExit(void) {
-    // Only when the program ends another way (std::exit on an error): stdio is closed by now. Not back to hbl
-    // (the threads), but out as conker::switch_exit does.
+    appletSetAutoSleepDisabled(false);
     restore_clocks();
-    __appExit();
-    svcExitProcess();
 }
 
 // libnx gives a thread made without a stack size (every std::thread: the game's threads, RT64's,
