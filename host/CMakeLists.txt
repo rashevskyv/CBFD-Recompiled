@@ -391,7 +391,19 @@ if (CONKER_SWITCH AND NOT CONKER_HOST_ONLY)
             "-Wl,-u,vk_icdGetInstanceProcAddr" "${CONKER_NVK_SDK}/lib/libvulkan.a"
             expat zstd z nx m stdc++)
     endif()
-    nx_generate_nacp(ConkerRecomp.nacp NAME "Conker's Bad Fur Day: Recompiled" AUTHOR "CBFD-Recompiled" VERSION "0.1.6")
+    # The version hbmenu shows tells which build is on the console: "0.<commits>.<sha7>" (NACP allows 16 bytes).
+    # switch/build.sh configures again on every run, so it follows the checkout.
+    execute_process(COMMAND git rev-list --count HEAD WORKING_DIRECTORY "${REPO_ROOT}"
+        OUTPUT_VARIABLE CONKER_GIT_COUNT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    execute_process(COMMAND git rev-parse --short=7 HEAD WORKING_DIRECTORY "${REPO_ROOT}"
+        OUTPUT_VARIABLE CONKER_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if (CONKER_GIT_COUNT AND CONKER_GIT_SHA)
+        set(CONKER_NRO_VERSION "0.${CONKER_GIT_COUNT}.${CONKER_GIT_SHA}")
+    else()
+        set(CONKER_NRO_VERSION "0.1.6")
+    endif()
+    message(STATUS "NRO version: ${CONKER_NRO_VERSION}")
+    nx_generate_nacp(ConkerRecomp.nacp NAME "Conker's Bad Fur Day: Recompiled" AUTHOR "CBFD-Recompiled" VERSION "${CONKER_NRO_VERSION}")
     # The launcher's acorn (host/assets/thumbnail.png), 256x256: without one the homebrew menu shows libnx's.
     nx_create_nro(ConkerRecomp NACP ConkerRecomp.nacp ICON "${REPO_ROOT}/switch/icon.jpg")
 endif()

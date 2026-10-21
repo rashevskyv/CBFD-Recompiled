@@ -524,3 +524,6 @@ Switch changes to the submodules are in `switch/patches/*.patch`, which `switch/
   function to our `end_process` (`svcExitProcess`); `userAppExit` only puts the clocks back; `conker::switch_exit`
   and the watchdog call `__libnx_exit(0)`, libnx's exit without `exit()`'s destructors: services closed once, then
   the process ends, never back to hbl. On the console (SHA-1 a696e580); not yet run.
+- **NRO version from git** (`host/CMakeLists.txt`): the NACP version is `0.<commit count>.<sha7>` of the checkout
+  it was built from (16 bytes at most), so hbmenu / kefir-hub shows which build is on the console. The log's first
+  line keeps the build time.
