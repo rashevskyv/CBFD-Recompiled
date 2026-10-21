@@ -1,5 +1,9 @@
 # Conker's Bad Fur Day: Recompiled → Nintendo Switch — notes for Claude
 
+**Status: stopped 2026-10-21, superseded by DomazinUS/CBFD-Switch (RC1, 60 fps).** No more work here.
+Works on hardware: 30 fps at resolution Auto, the free camera on the right stick, A/B by Nintendo labels, L skips cutscenes.
+Open: the quit error fix (0.765.3dba2c4, `__libnx_exit` path) is not verified on hardware; the widescreen culling spot is unknown.
+
 Goal: run this N64 static recompilation (N64Recomp + N64ModernRuntime + RT64 +
 RecompFrontend) natively on Nintendo Switch as a libnx NRO. This is the fork
 `rashevskyv/CBFD-Recompiled`, branch `switch` (default). Upstream is
